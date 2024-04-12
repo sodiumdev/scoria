@@ -7,7 +7,7 @@ private val NAME_TO_TYPE_MAP = mapOf(
     "any" to ExpressionType.OBJECT
 )
 
-data class Local(val index: Int, val type: ExpressionType, var value: Expression?, val isGlobal: Boolean, var isUsed: Boolean = false)
+data class Local(val index: Int, val type: ExpressionType, var value: Expression?, val isGlobal: Boolean, var isUsed: Boolean = false, var isReassigned: Boolean = false)
 
 class Environment(private var parent: Environment?) {
     private val locals = mutableMapOf<String, Local>()
@@ -236,16 +236,19 @@ class Parser(source: String) {
             val value = assignment()
 
             if (expr is GetVariableExpression) {
-                val info = environment[expr.name.content]
+                val local = environment[expr.name.content]
+                local.isReassigned = true
 
                 environment.assign(expr.name.content, Local(
-                    info.index,
+                    local.index,
                     value.type,
                     value,
-                    false,
+                    isGlobal = local.isGlobal,
+                    isUsed = local.isUsed,
+                    isReassigned = true
                 ))
 
-                return AssignVariableExpression(expr.name, value, info.index)
+                return AssignVariableExpression(expr.name, value, local.index)
             }
 
             throw errorAt(equals, "Invalid assignment target")

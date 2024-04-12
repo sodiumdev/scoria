@@ -25,7 +25,7 @@ class DoubleValue(override val value: Double): NumberValue<Double>() {
     override operator fun div(other: NumberValue<*>) = DoubleValue(value / other.value.toDouble())
     override operator fun plus(other: NumberValue<*>) = DoubleValue(value + other.value.toDouble())
     override operator fun unaryMinus() = DoubleValue(-value)
-    override fun compareTo(rightValue: NumberValue<*>): Int = value.compareTo(rightValue.value as Double)
+    override fun compareTo(rightValue: NumberValue<*>): Int = value.compareTo(rightValue.value.toDouble())
 }
 
 class IntegerValue(override val value: Int): NumberValue<Int>() {
@@ -33,21 +33,24 @@ class IntegerValue(override val value: Int): NumberValue<Int>() {
     override operator fun div(other: NumberValue<*>) = IntegerValue(value / other.value.toInt())
     override operator fun plus(other: NumberValue<*>) = IntegerValue(value + other.value.toInt())
     override operator fun unaryMinus() = IntegerValue(-value)
-    override fun compareTo(rightValue: NumberValue<*>): Int = value.compareTo(rightValue.value as Double)}
+    override fun compareTo(rightValue: NumberValue<*>): Int = value.compareTo(rightValue.value.toInt())
+}
 
 class LongValue(override val value: Long): NumberValue<Long>() {
     override operator fun times(other: NumberValue<*>) = LongValue(value * other.value.toLong())
     override operator fun div(other: NumberValue<*>) = LongValue(value / other.value.toLong())
     override operator fun plus(other: NumberValue<*>) = LongValue(value + other.value.toLong())
     override operator fun unaryMinus() = LongValue(-value)
-    override fun compareTo(rightValue: NumberValue<*>): Int = value.compareTo(rightValue.value as Double)}
+    override fun compareTo(rightValue: NumberValue<*>): Int = value.compareTo(rightValue.value.toLong())
+}
 
 class FloatValue(override val value: Float): NumberValue<Float>() {
     override operator fun times(other: NumberValue<*>) = FloatValue(value * other.value.toFloat())
     override operator fun div(other: NumberValue<*>) = FloatValue(value / other.value.toFloat())
     override operator fun plus(other: NumberValue<*>) = FloatValue(value + other.value.toFloat())
     override operator fun unaryMinus() = FloatValue(-value)
-    override fun compareTo(rightValue: NumberValue<*>): Int = value.compareTo(rightValue.value as Double)}
+    override fun compareTo(rightValue: NumberValue<*>): Int = value.compareTo(rightValue.value.toFloat())
+}
 
 sealed interface Object
 
@@ -59,8 +62,6 @@ data class StringObject(var string: String): Object {
     }
 }
 
-data class FunctionObject(var name: String, var code: Chunk, var params: List<Pair<Token, ExpressionType>>): Object {
-    val arity = params.size
-}
+data class FunctionObject(var name: String, var code: Chunk, var params: List<Pair<Token, ExpressionType>>): Object
 
 class ObjectValue<T: Object>(override val value: T): Value<T>()

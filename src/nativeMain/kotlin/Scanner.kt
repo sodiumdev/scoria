@@ -118,7 +118,7 @@ class Scanner(private val source: String) {
                     advance()
                 }
 
-                '\\' -> if (nextChar == '\\') {
+                '/' -> if (nextChar == '/') {
                     while (currentChar != '\n' && !atEnd)
                         advance()
                 } else return

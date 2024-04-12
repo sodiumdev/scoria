@@ -1,6 +1,8 @@
 class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     override fun visit(call: CallExpression): Expression {
-        call.arguments = call.arguments.map { it.accept(this) }
+        call.arguments = call.arguments.map {
+            it.accept(this)
+        }
 
         return call
     }
@@ -38,13 +40,14 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     }
 
     override fun visit(getVariable: GetVariableExpression): Expression {
-        val value = getVariable.local.value?.accept(this) ?: run {
+        val value = (if (getVariable.local.isReassigned) null else getVariable.local.value?.accept(this)) ?: run {
             getVariable.local.isUsed = true
 
             return getVariable
         }
 
         getVariable.local.isUsed = false
+        getVariable.local.isReassigned = false
         getVariable.local.value = value
 
         return value
@@ -56,7 +59,12 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
         return assignVariable
     }
 
-    override fun visit(grouping: GroupingExpression) = grouping.groupedValue.accept(this)
+    override fun visit(grouping: GroupingExpression): Expression {
+        grouping.groupedValue = grouping.groupedValue.accept(this)
+
+        return grouping
+    }
+
     override fun visit(literal: LiteralExpression) = literal
 
     override fun visit(function: FunctionStatement) {

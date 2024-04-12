@@ -197,7 +197,7 @@ data class AssignVariableExpression(val name: Token, var assigned: Expression, v
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
-data class GroupingExpression(val groupedValue: Expression, val line: Int): Expression {
+data class GroupingExpression(var groupedValue: Expression, val line: Int): Expression {
     override val type = groupedValue.type
     override val value: Any? = groupedValue.value
 
