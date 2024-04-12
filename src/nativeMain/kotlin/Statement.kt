@@ -21,12 +21,12 @@ data class FunctionStatement(val name: Token, val params: List<Pair<Token, Expre
     override fun <R> accept(visitor: StatementVisitor<R>): R = visitor.visit(this)
 }
 
-data class WhileStatement(var condition: Expression, val body: Statement, override val line: Int): Statement {
+data class WhileStatement(var condition: Expression, var body: Statement, override val line: Int): Statement {
     override fun <R> accept(visitor: StatementVisitor<R>): R = visitor.visit(this)
 }
 
 data class IfStatement(
-    var condition: Expression, val thenBranch: Statement, val elseBranch: Statement?,
+    var condition: Expression, var thenBranch: Statement, var elseBranch: Statement?,
     override val line: Int): Statement {
     override fun <R> accept(visitor: StatementVisitor<R>): R = visitor.visit(this)
 }

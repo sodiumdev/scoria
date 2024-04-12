@@ -7,7 +7,7 @@ private val NAME_TO_TYPE_MAP = mapOf(
     "any" to ExpressionType.OBJECT
 )
 
-data class Local(val index: Int, val type: ExpressionType, var value: Expression?, val isGlobal: Boolean, var isUsed: Boolean = false, var isReassigned: Boolean = false)
+data class Local(val index: Int, val type: ExpressionType, var value: Expression?, val isGlobal: Boolean, var isUsed: Boolean = false)
 
 class Environment(private var parent: Environment?) {
     private val locals = mutableMapOf<String, Local>()
@@ -111,12 +111,8 @@ class Parser(source: String) {
             return LiteralExpression(previous!!.content.toFloat(), previous!!.line)
         if (match(TokenType.INTEGER))
             return LiteralExpression(previous!!.content.toInt(), previous!!.line)
-        if (match(TokenType.IDENTIFIER)) {
-            val local = environment[previous!!.content]
-            local.isUsed = true
-
-            return GetVariableExpression(previous!!, local)
-        }
+        if (match(TokenType.IDENTIFIER))
+            return GetVariableExpression(previous!!, environment[previous!!.content])
 
         if (match(TokenType.LEFT_PAREN)) {
             val expr = expression()
@@ -236,19 +232,18 @@ class Parser(source: String) {
             val value = assignment()
 
             if (expr is GetVariableExpression) {
-                val local = environment[expr.name.content]
-                local.isReassigned = true
+                val local = expr.local
 
-                environment.assign(expr.name.content, Local(
+                val newLocal = Local(
                     local.index,
                     value.type,
                     value,
                     isGlobal = local.isGlobal,
                     isUsed = local.isUsed,
-                    isReassigned = true
-                ))
+                )
+                environment.assign(expr.name.content, newLocal)
 
-                return AssignVariableExpression(expr.name, value, local.index)
+                return AssignVariableExpression(expr.name, value, newLocal)
             }
 
             throw errorAt(equals, "Invalid assignment target")

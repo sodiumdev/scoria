@@ -50,6 +50,7 @@ enum class ExpressionType {
 }
 
 sealed interface Expression {
+    val hasCall: Boolean
     val type: ExpressionType
     val value: Any?
         get() = null
@@ -77,12 +78,14 @@ sealed interface Expression {
 
 data class CallExpression(val callee: Expression, val paren: Token, var arguments: List<Expression>): Expression {
     override var type: ExpressionType = ExpressionType.OBJECT
+    override val hasCall: Boolean = true
 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
 data class UnaryExpression(var right: Expression, val operator: Token): Expression {
-    override val type = right.type
+    override val type
+        get() = right.type
     override val value: Any?
         get() {
             right.value ?: return null
@@ -101,6 +104,9 @@ data class UnaryExpression(var right: Expression, val operator: Token): Expressi
                 else -> {}
             }
         }
+
+    override val hasCall: Boolean
+        get() = right.hasCall
 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
@@ -138,23 +144,27 @@ data class LogicalExpression(var left: Expression, var right: Expression, val op
             }
         }
 
+    override val hasCall: Boolean
+        get() = left.hasCall || right.hasCall
+
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
 data class BinaryExpression(var left: Expression, var right: Expression, val operator: Token): Expression {
-    override val type = when (operator.type) {
-        TokenType.PLUS,
-        TokenType.MINUS,
-        TokenType.STAR,
-        TokenType.SLASH -> left.type.or(right.type)
+    override val type
+        get() = when (operator.type) {
+            TokenType.PLUS,
+            TokenType.MINUS,
+            TokenType.STAR,
+            TokenType.SLASH -> left.type.or(right.type)
 
-        TokenType.GREATER,
-        TokenType.GREATER_EQUAL,
-        TokenType.LESS,
-        TokenType.LESS_EQUAL -> ExpressionType.BOOLEAN
+            TokenType.GREATER,
+            TokenType.GREATER_EQUAL,
+            TokenType.LESS,
+            TokenType.LESS_EQUAL -> ExpressionType.BOOLEAN
 
-        else -> throw IllegalStateException()
-    }
+            else -> throw IllegalStateException()
+        }
     override val value: Any?
         get() {
             left.value ?: return null
@@ -178,11 +188,17 @@ data class BinaryExpression(var left: Expression, var right: Expression, val ope
             }
         }
 
+    override val hasCall: Boolean
+        get() = left.hasCall || right.hasCall
+
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
 data class GetVariableExpression(val name: Token, val local: Local): Expression {
     override val type: ExpressionType = local.type
+
+    override val hasCall: Boolean
+        get() = local.value?.hasCall ?: false
 
     val index = local.index
     val isGlobal = local.isGlobal
@@ -190,16 +206,28 @@ data class GetVariableExpression(val name: Token, val local: Local): Expression 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
-data class AssignVariableExpression(val name: Token, var assigned: Expression, val index: Int): Expression {
-    override val type: ExpressionType = assigned.type
-    override val value: Any? = assigned.value
+data class AssignVariableExpression(val name: Token, var assigned: Expression, val local: Local): Expression {
+    override val type: ExpressionType
+        get() = assigned.type
+    override val value: Any?
+        get() = assigned.value
+
+    override val hasCall: Boolean
+        get() = assigned.hasCall
+
+    val index = local.index
 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
 data class GroupingExpression(var groupedValue: Expression, val line: Int): Expression {
-    override val type = groupedValue.type
-    override val value: Any? = groupedValue.value
+    override val type
+        get() = groupedValue.type
+    override val value: Any?
+        get() = groupedValue.value
+
+    override val hasCall: Boolean
+        get() = groupedValue.hasCall
 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
@@ -215,6 +243,9 @@ data class LiteralExpression(override val value: Any?, val line: Int): Expressio
 
         else -> error("Invalid literal value!")
     }
+
+    override val hasCall: Boolean
+        get() = false
 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 

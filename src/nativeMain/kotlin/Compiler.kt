@@ -97,6 +97,9 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
     override fun visit(expression: ExpressionStatement) {
         expression.expression.accept(this)
+        chunk.write(
+            Opcode.POP, expression.line
+        )
     }
 
     override fun visit(print: PrintStatement) {
@@ -106,7 +109,7 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
     override fun visit(returnStatement: ReturnStatement) {
         if (returnStatement.returnValue == null)
-            visit(LiteralExpression(null, returnStatement.line))
+            visit(LiteralExpression(NullObject, returnStatement.line))
         else returnStatement.returnValue!!.accept(this)
 
         chunk.write(Opcode.RETURN, returnStatement.line)
@@ -253,23 +256,50 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
             return
         }
 
-        binary.left.accept(this)
-        binary.right.accept(this)
-
         if (!binary.left.type.isNumber || !binary.right.type.isNumber)
             error("Numbers are required to make binary operations!")
 
-        if (binary.operator.type == TokenType.SLASH && binary.right.value != null) {
+        if (binary.operator.type == TokenType.SLASH) {
+            if (binary.right.value != null) {
+                binary.left.accept(this)
+
+                chunk.writeConstant(
+                    DoubleValue(
+                        1.0 / (binary.right.value as NumberValue<*>).value.toDouble()
+                    ),
+                    binary.operator.line
+                )
+                chunk.write(Opcode.MULTIPLY, binary.operator.line)
+
+                return
+            }
+
+            if (binary.left.value == 0) {
+                chunk.writeConstant(
+                    DoubleValue(
+                        0.0
+                    ),
+                    binary.operator.line
+                )
+
+                return
+            }
+        }
+
+        if (binary.operator.type == TokenType.STAR
+            && (binary.left.value == 0 || binary.right.value == 0)) {
             chunk.writeConstant(
                 DoubleValue(
-                    1.0 / (binary.right.value as NumberValue<*>).value.toDouble()
+                    0.0
                 ),
                 binary.operator.line
             )
-            chunk.write(Opcode.MULTIPLY, binary.operator.line)
 
             return
         }
+
+        binary.left.accept(this)
+        binary.right.accept(this)
 
         when (binary.operator.type) {
             TokenType.MINUS -> {

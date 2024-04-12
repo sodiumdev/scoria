@@ -3,11 +3,8 @@ fun main() {
 
     vm.interpret(""" 
 fn main() {
-    let x = 0;
-    while x < 25 {
-      x = x + 1;
-      : x;
-    }
+    let x = 4;
+    x = x + 1;
     
     let y = 3;
 
@@ -19,6 +16,8 @@ fn main() {
       y = y + 1; 
       : "this should not work!";
     }
+    
+    : x;
 
     : y;
     : "hi"; // hi

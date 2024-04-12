@@ -40,14 +40,13 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     }
 
     override fun visit(getVariable: GetVariableExpression): Expression {
-        val value = (if (getVariable.local.isReassigned) null else getVariable.local.value?.accept(this)) ?: run {
+        val value = getVariable.local.value?.accept(this) ?: run {
             getVariable.local.isUsed = true
 
             return getVariable
         }
 
         getVariable.local.isUsed = false
-        getVariable.local.isReassigned = false
         getVariable.local.value = value
 
         return value
@@ -59,11 +58,7 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
         return assignVariable
     }
 
-    override fun visit(grouping: GroupingExpression): Expression {
-        grouping.groupedValue = grouping.groupedValue.accept(this)
-
-        return grouping
-    }
+    override fun visit(grouping: GroupingExpression) = grouping.groupedValue.accept(this)
 
     override fun visit(literal: LiteralExpression) = literal
 
@@ -107,8 +102,11 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     }
 }
 
-class DeadCodeEliminator: StatementVisitor<Statement?> {
+class DeadCodeEliminator: ExpressionVisitor<Expression?>, StatementVisitor<Statement?> {
+    private var blockReturned: Boolean = false
+
     override fun visit(function: FunctionStatement): Statement {
+        blockReturned = false
         function.body = function.body.mapNotNull {
             it.accept(this)
         }
@@ -118,9 +116,15 @@ class DeadCodeEliminator: StatementVisitor<Statement?> {
 
     override fun visit(ifStatement: IfStatement): Statement? {
         if (ifStatement.condition.value == false)
-            return ifStatement.elseBranch
+            return ifStatement.elseBranch?.accept(this)
         else if (ifStatement.condition.value == true)
-            return ifStatement.thenBranch
+            return ifStatement.thenBranch.accept(this)
+
+        blockReturned = false
+        ifStatement.thenBranch = ifStatement.thenBranch.accept(this) ?: return null
+
+        blockReturned = false
+        ifStatement.elseBranch = ifStatement.elseBranch?.accept(this)
 
         return ifStatement
     }
@@ -129,33 +133,84 @@ class DeadCodeEliminator: StatementVisitor<Statement?> {
         if (whileStatement.condition.value == false)
             return null
 
+        whileStatement.condition.accept(this)?.let { whileStatement.condition = it }
+
+        blockReturned = false
+        whileStatement.body = whileStatement.body.accept(this) ?: return null
+
         return whileStatement
     }
 
-    override fun visit(expression: ExpressionStatement): Statement {
+    override fun visit(expression: ExpressionStatement): Statement? {
+        if (blockReturned)
+            return null
+
+        expression.expression = expression.expression.accept(this) ?: return null
+
         return expression
     }
 
-    override fun visit(print: PrintStatement): Statement {
+    override fun visit(print: PrintStatement): Statement? {
+        if (blockReturned)
+            return null
+
+        print.expression = print.expression.accept(this) ?: return null
+
         return print
     }
 
-    override fun visit(returnStatement: ReturnStatement): Statement {
+    override fun visit(returnStatement: ReturnStatement): Statement? {
+        if (blockReturned)
+            return null
+
+        blockReturned = true
+
+        returnStatement.returnValue = returnStatement.returnValue?.accept(this)
+
         return returnStatement
     }
 
     override fun visit(declareVariable: VariableDeclarationStatement): Statement? {
-        if (!declareVariable.isUsed)
+        if (blockReturned)
             return null
+        if (!declareVariable.isUsed) {
+            if (declareVariable.init?.hasCall == true)
+                return ExpressionStatement(declareVariable.init!!, declareVariable.line)
+
+            return null
+        }
+
+        declareVariable.init = declareVariable.init?.accept(this)
 
         return declareVariable
     }
 
     override fun visit(block: BlockStatement): Statement {
+        blockReturned = false
         block.statements = block.statements.mapNotNull {
             it.accept(this)
         }
 
         return block
     }
+
+    override fun visit(call: CallExpression) = call
+    override fun visit(unary: UnaryExpression) = unary
+    override fun visit(logical: LogicalExpression) = logical
+    override fun visit(binary: BinaryExpression) = binary
+    override fun visit(getVariable: GetVariableExpression) = getVariable
+
+    override fun visit(assignVariable: AssignVariableExpression): Expression? {
+        if (!assignVariable.local.isUsed) {
+            if (assignVariable.assigned.hasCall)
+                return assignVariable.assigned.accept(this)
+
+            return null
+        }
+
+        return assignVariable
+    }
+
+    override fun visit(grouping: GroupingExpression) = grouping.groupedValue
+    override fun visit(literal: LiteralExpression) = literal
 }

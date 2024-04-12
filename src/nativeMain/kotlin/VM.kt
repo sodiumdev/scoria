@@ -379,12 +379,10 @@ class VM(private var chunk: Chunk?) {
         }
 
         val optimizer = LiteralOptimizer()
-        ast.forEach {
-            it.accept(optimizer)
-        }
-
         val deadCodeEliminator = DeadCodeEliminator()
         ast = ast.mapNotNull {
+            it.accept(optimizer)
+            it.accept(optimizer)
             it.accept(deadCodeEliminator)
         }
 
