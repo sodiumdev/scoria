@@ -2,6 +2,7 @@ interface ExpressionVisitor<R> {
     fun visit(setProperty: SetPropertyExpression): R
     fun visit(getProperty: GetPropertyExpression): R
     fun visit(call: CallExpression): R
+    fun visit(call: MethodCallExpression): R
     fun visit(unary: UnaryExpression): R
     fun visit(logical: LogicalExpression): R
     fun visit(binary: BinaryExpression): R
@@ -94,7 +95,14 @@ data class SetPropertyExpression(val name: Token, var parent: Expression, var as
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
-data class CallExpression(var callee: Expression, val paren: Token, var arguments: List<Expression>): Expression {
+open class CallExpression(var callee: Expression, val paren: Token, var arguments: List<Expression>): Expression {
+    override var type: ExpressionType = ExpressionType.OBJECT
+    override val hasCall: Boolean = true
+
+    override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
+}
+
+class MethodCallExpression(callee: Expression, paren: Token, arguments: List<Expression>, val name: Token): CallExpression(callee, paren, arguments) {
     override var type: ExpressionType = ExpressionType.OBJECT
     override val hasCall: Boolean = true
 

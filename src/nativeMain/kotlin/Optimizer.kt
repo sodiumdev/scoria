@@ -21,6 +21,15 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
         return call
     }
 
+    override fun visit(call: MethodCallExpression): Expression {
+        call.callee = call.callee.accept(this)
+        call.arguments = call.arguments.map {
+            it.accept(this)
+        }
+
+        return call
+    }
+
     override fun visit(unary: UnaryExpression): Expression {
         unary.value?.let {
             return LiteralExpression(it, unary.operator.line)
@@ -54,7 +63,9 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     }
 
     override fun visit(getVariable: GetVariableExpression): Expression {
-        val value = getVariable.local.value?.accept(this) ?: run {
+        val value = (if (!getVariable.local.shouldFold)
+            null
+        else getVariable.local.value?.accept(this)) ?: run {
             getVariable.local.isUsed = true
 
             return getVariable
@@ -257,6 +268,15 @@ class DeadCodeEliminator: ExpressionVisitor<Expression?>, StatementVisitor<State
     }
 
     override fun visit(call: CallExpression): Expression {
+        call.callee = call.callee.accept(this) ?: call.callee
+        call.arguments = call.arguments.map {
+            it.accept(this) ?: it
+        }
+
+        return call
+    }
+
+    override fun visit(call: MethodCallExpression): Expression {
         call.callee = call.callee.accept(this) ?: call.callee
         call.arguments = call.arguments.map {
             it.accept(this) ?: it

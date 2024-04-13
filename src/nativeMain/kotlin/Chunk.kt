@@ -31,6 +31,7 @@ enum class Opcode {
     LDC_IP,
 
     POP,
+    POP_IF_PRESENT,
     PRINT_POP,
 
     DUP,
@@ -46,6 +47,7 @@ enum class Opcode {
     SET,
 
     CALL,
+    CALL_METHOD,
 
     RETURN,
 }
@@ -249,6 +251,12 @@ class Chunk {
                 1
             }
 
+            Opcode.POP_IF_PRESENT.ordinal -> {
+                println("POP_IF_PRESENT")
+
+                1
+            }
+
             Opcode.PRINT_POP.ordinal -> {
                 println("PRINT_POP")
 
@@ -307,6 +315,12 @@ class Chunk {
                 println("CALL ${readByte(offset + 1)}")
 
                 2
+            }
+
+            Opcode.CALL_METHOD.ordinal -> {
+                println("CALL_METHOD ${readConstant(offset + 1)} ${readByte(offset + 2)}")
+
+                3
             }
 
             Opcode.RETURN.ordinal -> {

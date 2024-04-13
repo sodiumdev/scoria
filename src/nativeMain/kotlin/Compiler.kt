@@ -154,7 +154,11 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
     override fun visit(expression: ExpressionStatement) {
         expression.expression.accept(this)
-        chunk.write(
+        if (expression.expression is CallExpression)
+            chunk.write(
+                Opcode.POP_IF_PRESENT, expression.line
+            )
+        else chunk.write(
             Opcode.POP, expression.line
         )
     }
@@ -267,6 +271,38 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
         chunk.write(
             Opcode.CALL,
+            call.paren.line
+        )
+
+        chunk.write(
+            call.arguments.size,
+            call.paren.line
+        )
+    }
+
+    override fun visit(call: MethodCallExpression) {
+        call.callee.accept(this)
+        call.arguments.forEach {
+            it.accept(this)
+        }
+
+        chunk.constants.add(
+            ObjectValue(
+                StringObject(
+                    call.name.content
+                )
+            )
+        )
+
+        val identifierLocation = chunk.constants.size - 1
+
+        chunk.write(
+            Opcode.CALL_METHOD,
+            call.paren.line
+        )
+
+        chunk.write(
+            identifierLocation,
             call.paren.line
         )
 

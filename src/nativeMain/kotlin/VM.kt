@@ -300,6 +300,11 @@ class VM(private var chunk: Chunk?) {
                     currentFrame.stack.pop()
                 }
 
+                Opcode.POP_IF_PRESENT.ordinal -> {
+                    if (currentFrame.stack.isNotEmpty())
+                        currentFrame.stack.pop()
+                }
+
                 Opcode.PRINT_POP.ordinal -> {
                     println(currentFrame.stack.pop())
                 }
@@ -403,6 +408,24 @@ class VM(private var chunk: Chunk?) {
                     callValue(callee, argCount)
                 }
 
+                Opcode.CALL_METHOD.ordinal -> {
+                    val name = readConstant().value.toString()
+
+                    val argCount = readByte().toInt()
+                    if (currentFrame.stack.size < argCount + 1)
+                        throw runtimeError("Stack underflow")
+
+                    val parent = currentFrame.stack[currentFrame.stack.size - argCount - 1]
+                    if (parent !is ObjectValue)
+                        throw runtimeError("Parent should be an object")
+                    if (parent.value !is InstanceObject)
+                        throw runtimeError("Parent should be an instance")
+
+                    val callee = (parent.value as InstanceObject).fields[name] ?: throw runtimeError("Method $name does not exist")
+
+                    callValue(callee, argCount)
+                }
+
                 Opcode.RETURN.ordinal -> {
                     val isVoid = currentFrame.function.returnType == null
 
@@ -431,12 +454,12 @@ class VM(private var chunk: Chunk?) {
                 val isMethod = callee.value.isMethod
 
                 val values = mutableMapOf<Int, Value<*>>()
-                (if (isMethod) {
+                if (isMethod)
                     values[0] = currentFrame.stack[currentFrame.stack.size - argCount - 1]
-                    (1..argCount)
-                } else (0..<argCount)).forEach {
+
+                (0..<argCount).forEach {
                     val value = currentFrame.stack.pop()
-                    values[it] = value
+                    values[if (isMethod) it + 1 else it] = value
 
                     val info = callee.value.params[it]
                     val expectedType = info.second
@@ -459,7 +482,7 @@ class VM(private var chunk: Chunk?) {
                     callee.value
                 )
 
-                val init = instance.fields["<init>"]!!
+                val init = instance.fields["<init>"] ?: throw runtimeError("Init method doesn't exist")
                 if (init.value !is FunctionObject)
                     throw runtimeError("Init method is not a function object")
 

@@ -7,7 +7,7 @@ private val NAME_TO_TYPE_MAP = mapOf(
     "any" to ExpressionType.OBJECT
 )
 
-data class Local(val index: Int, val type: ExpressionType, var value: Expression?, val isGlobal: Boolean, var isUsed: Boolean = false)
+data class Local(val index: Int, val type: ExpressionType, var value: Expression?, val isGlobal: Boolean, var isUsed: Boolean = false, var shouldFold: Boolean = true)
 data class Field(val type: ExpressionType, var value: Expression?)
 
 class Environment(private var parent: Environment?) {
@@ -129,28 +129,26 @@ class Parser(source: String) {
         throw IllegalStateException("Error on token: ${current!!}")
     }
 
-    private fun finishCall(callee: Expression): Expression {
-        val arguments = mutableListOf<Expression>()
-        if (!check(TokenType.RIGHT_PAREN)) {
-            do {
-                arguments.add(expression())
-            } while (match(TokenType.COMMA))
-        }
-
-        val paren = consume(
-            TokenType.RIGHT_PAREN,
-            "Expected \")\" after arguments"
-        )
-
-        return CallExpression(callee, paren, arguments)
-    }
-
     private fun call(): Expression {
         var expr = primary()
 
         while (true) {
             expr = if (match(TokenType.LEFT_PAREN)) {
-                finishCall(expr)
+                val arguments = mutableListOf<Expression>()
+                if (!check(TokenType.RIGHT_PAREN)) {
+                    do {
+                        arguments.add(expression())
+                    } while (match(TokenType.COMMA))
+                }
+
+                val paren = consume(
+                    TokenType.RIGHT_PAREN,
+                    "Expected \")\" after arguments"
+                )
+
+                if (expr is GetPropertyExpression) {
+                    MethodCallExpression(expr.parent, paren, arguments, expr.name)
+                } else CallExpression(expr, paren, arguments)
             } else if (match(TokenType.DOT)) {
                 GetPropertyExpression(consume(TokenType.IDENTIFIER, "Expected property name after \".\""), expr)
             } else break
@@ -247,6 +245,7 @@ class Parser(source: String) {
                     value,
                     isGlobal = local.isGlobal,
                     isUsed = local.isUsed,
+                    shouldFold = value.type != ExpressionType.OBJECT
                 )
                 environment.assign(expr.name.content, newLocal)
 
@@ -409,7 +408,8 @@ class Parser(source: String) {
             environment.size,
             type,
             initializer,
-            false
+            false,
+            shouldFold = type != ExpressionType.OBJECT
         )
         environment[name.content] = local
 
@@ -444,7 +444,8 @@ class Parser(source: String) {
                     0,
                     ExpressionType.OBJECT,
                     null,
-                    false
+                    false,
+                    shouldFold = false
                 )
 
                 consume(TokenType.LEFT_PAREN, "Expect \"(\" after method name")
@@ -559,7 +560,8 @@ class Parser(source: String) {
                     environment.size,
                     type,
                     null,
-                    false
+                    false,
+                    shouldFold = type != ExpressionType.OBJECT
                 )
 
                 parameters.add(
@@ -591,7 +593,8 @@ class Parser(source: String) {
             index,
             ExpressionType.OBJECT,
             null,
-            true
+            true,
+            shouldFold = false
         )
 
         if (name.content == "main")

@@ -4,17 +4,20 @@ fun main() {
     vm.interpret(""" 
 class Example {
   let field = 1 
-  fn() { }
+  fn(a: int) {
+    : a
+  }
 
-  fn sayHi() {
-    : "hi"
+  fn say(a: int) {
+    : a
   }
 }
 
 fn main() {
-  let example = Example()
+  let example = Example(1)
 
-  example.sayHi()
+  example.say(342)
+  example.say(4523)
 }
     """.trimIndent())
 }
