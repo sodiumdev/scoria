@@ -20,7 +20,12 @@ enum class Opcode {
 
     LOAD,
     LOAD_IP,
+
+    LOAD_GLOBAL,
+    LOAD_GLOBAL_IP,
+
     STORE,
+    STORE_GLOBAL,
 
     LDC,
     LDC_IP,
@@ -34,6 +39,11 @@ enum class Opcode {
     IFNE,
     JUMP,
     LOOP,
+
+    GET,
+    GET_IP,
+
+    SET,
 
     CALL,
 
@@ -197,8 +207,26 @@ class Chunk {
                 3
             }
 
+            Opcode.LOAD_GLOBAL.ordinal -> {
+                println("LOAD_GLOBAL ${readByte(offset + 1)}")
+
+                2
+            }
+
+            Opcode.LOAD_GLOBAL_IP.ordinal -> {
+                println("LOAD_GLOBAL_IP ${readByte(offset + 1)} ${readByte(offset + 2)}")
+
+                3
+            }
+
             Opcode.STORE.ordinal -> {
                 println("STORE ${readByte(offset + 1)}")
+
+                2
+            }
+
+            Opcode.STORE_GLOBAL.ordinal -> {
+                println("STORE_GLOBAL ${readByte(offset + 1)}")
 
                 2
             }
@@ -255,6 +283,24 @@ class Chunk {
                 println("LOOP ${readShort(offset + 1)}")
 
                 3
+            }
+
+            Opcode.GET.ordinal -> {
+                println("GET ${readConstant(offset + 1)}")
+
+                2
+            }
+
+            Opcode.GET_IP.ordinal -> {
+                println("GET_IP ${readConstant(offset + 1)} ${readByte(offset + 1)}")
+
+                3
+            }
+
+            Opcode.SET.ordinal -> {
+                println("SET ${readConstant(offset + 1)}")
+
+                2
             }
 
             Opcode.CALL.ordinal -> {

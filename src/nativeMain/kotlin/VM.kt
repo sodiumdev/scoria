@@ -9,6 +9,8 @@ data class CallFrame(val function: FunctionObject, var ip: Int = 0, val stack: A
 class VM(private var chunk: Chunk?) {
     private val frames = ArrayDeque<CallFrame>(64)
 
+    private val globals = mutableMapOf<Int, Value<*>>()
+
     private val currentFrame: CallFrame
         get() = frames.last()
 
@@ -24,13 +26,13 @@ class VM(private var chunk: Chunk?) {
 
     private fun run(): InterpretResult {
         while (true) {
-            when (val inst = readByte().toInt()) {
+            when (val lastInstruction = readByte().toInt()) {
                 Opcode.ADD.ordinal -> {
                     if (currentFrame.stack.size < 2)
                         throw runtimeError("Stack underflow")
 
-                    val b = currentFrame.stack.removeLast()
-                    val a = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
+                    val a = currentFrame.stack.pop()
 
                     if (a !is NumberValue)
                         throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
@@ -44,8 +46,8 @@ class VM(private var chunk: Chunk?) {
                     if (currentFrame.stack.size < 2)
                         throw runtimeError("Stack underflow")
 
-                    val b = currentFrame.stack.removeLast()
-                    val a = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
+                    val a = currentFrame.stack.pop()
 
                     if (a !is NumberValue)
                         throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
@@ -59,8 +61,8 @@ class VM(private var chunk: Chunk?) {
                     if (currentFrame.stack.size < 2)
                         throw runtimeError("Stack underflow")
 
-                    val b = currentFrame.stack.removeLast()
-                    val a = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
+                    val a = currentFrame.stack.pop()
 
                     if (a !is NumberValue)
                         throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
@@ -87,7 +89,7 @@ class VM(private var chunk: Chunk?) {
 
                     val addr = readByte().toInt()
 
-                    val b = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
                     val a = currentFrame.registry[addr]!!
 
                     if (a !is NumberValue)
@@ -104,7 +106,7 @@ class VM(private var chunk: Chunk?) {
 
                     val addr = readByte().toInt()
 
-                    val b = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
                     val a = currentFrame.registry[addr]!!
 
                     if (a !is NumberValue)
@@ -121,7 +123,7 @@ class VM(private var chunk: Chunk?) {
 
                     val addr = readByte().toInt()
 
-                    val b = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
                     val a = currentFrame.registry[addr]!!
 
                     if (a !is NumberValue)
@@ -194,8 +196,8 @@ class VM(private var chunk: Chunk?) {
                     if (currentFrame.stack.size < 2)
                         throw runtimeError("Stack underflow")
 
-                    val b = currentFrame.stack.removeLast()
-                    val a = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
+                    val a = currentFrame.stack.pop()
 
                     if (a !is NumberValue)
                         throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
@@ -209,8 +211,8 @@ class VM(private var chunk: Chunk?) {
                     if (currentFrame.stack.size < 2)
                         throw runtimeError("Stack underflow")
 
-                    val b = currentFrame.stack.removeLast()
-                    val a = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
+                    val a = currentFrame.stack.pop()
 
                     if (a !is NumberValue)
                         throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
@@ -224,8 +226,8 @@ class VM(private var chunk: Chunk?) {
                     if (currentFrame.stack.size < 2)
                         throw runtimeError("Stack underflow")
 
-                    val b = currentFrame.stack.removeLast()
-                    val a = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
+                    val a = currentFrame.stack.pop()
 
                     if (a !is NumberValue)
                         throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
@@ -239,8 +241,8 @@ class VM(private var chunk: Chunk?) {
                     if (currentFrame.stack.size < 2)
                         throw runtimeError("Stack underflow")
 
-                    val b = currentFrame.stack.removeLast()
-                    val a = currentFrame.stack.removeLast()
+                    val b = currentFrame.stack.pop()
+                    val a = currentFrame.stack.pop()
 
                     if (a !is NumberValue)
                         throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
@@ -261,11 +263,29 @@ class VM(private var chunk: Chunk?) {
                     currentFrame.registry[addrA]?.let { currentFrame.registry[addrB] = it }
                 }
 
+                Opcode.LOAD_GLOBAL.ordinal -> {
+                    globals[readByte().toInt()]?.let { currentFrame.stack.addLast(it) }
+                }
+
+                Opcode.LOAD_GLOBAL_IP.ordinal -> {
+                    val addrA = readByte().toInt()
+                    val addrB = readByte().toInt()
+
+                    globals[addrA]?.let { currentFrame.registry[addrB] = it }
+                }
+
                 Opcode.STORE.ordinal -> {
                     if (currentFrame.stack.size < 1)
                         throw runtimeError("Stack underflow")
 
-                    currentFrame.registry[readByte().toInt()] = currentFrame.stack.removeLast()
+                    currentFrame.registry[readByte().toInt()] = currentFrame.stack.pop()
+                }
+
+                Opcode.STORE_GLOBAL.ordinal -> {
+                    if (currentFrame.stack.size < 1)
+                        throw runtimeError("Stack underflow")
+
+                    globals[readByte().toInt()] = currentFrame.stack.pop()
                 }
 
                 Opcode.LDC.ordinal -> {
@@ -277,15 +297,15 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.POP.ordinal -> {
-                    currentFrame.stack.removeLast()
+                    currentFrame.stack.pop()
                 }
 
                 Opcode.PRINT_POP.ordinal -> {
-                    println(currentFrame.stack.removeLast())
+                    println(currentFrame.stack.pop())
                 }
 
                 Opcode.DUP.ordinal -> {
-                    currentFrame.stack.addLast(currentFrame.stack.last())
+                    currentFrame.stack.dup()
                 }
 
                 Opcode.IFEQ.ordinal -> {
@@ -322,49 +342,168 @@ class VM(private var chunk: Chunk?) {
                     currentFrame.ip -= offset
                 }
 
+                Opcode.GET.ordinal -> {
+                    if (currentFrame.stack.size < 1)
+                        throw runtimeError("Stack underflow")
+
+                    val name = readConstant().value.toString()
+
+                    val instance = currentFrame.stack.last()
+                    if (instance !is ObjectValue)
+                        throw runtimeError("Parent should be an object")
+                    if (instance.value !is InstanceObject)
+                        throw runtimeError("Parent should be an instance")
+
+                    (instance.value as InstanceObject).fields[name]?.let {
+                        currentFrame.stack.pop()
+                        currentFrame.stack.addLast(it)
+                    } ?: throw runtimeError("Undefined field $name")
+                }
+
+                Opcode.GET_IP.ordinal -> {
+                    if (currentFrame.stack.size < 1)
+                        throw runtimeError("Stack underflow")
+
+                    val name = readConstant().value.toString()
+                    val addr = readByte().toInt()
+
+                    val instance = currentFrame.stack.pop()
+                    if (instance !is ObjectValue)
+                        throw runtimeError("Parent should be an object")
+                    if (instance.value !is InstanceObject)
+                        throw runtimeError("Parent should be an instance")
+
+                    (instance.value as InstanceObject).fields[name]?.let {
+                        currentFrame.registry[addr] = it
+                    } ?: throw runtimeError("Undefined field $name")
+                }
+
+                Opcode.SET.ordinal -> {
+                    if (currentFrame.stack.size < 2)
+                        throw runtimeError("Stack underflow")
+
+                    val name = readConstant().value.toString()
+
+                    val instance = currentFrame.stack.pop()
+                    if (instance !is ObjectValue)
+                        throw runtimeError("Parent should be an object")
+                    if (instance.value !is InstanceObject)
+                        throw runtimeError("Parent should be an instance")
+
+                    (instance.value as InstanceObject).fields[name] = currentFrame.stack.pop()
+                }
+
                 Opcode.CALL.ordinal -> {
                     val argCount = readByte().toInt()
+                    if (currentFrame.stack.size < argCount + 1)
+                        throw runtimeError("Stack underflow")
 
                     val callee = currentFrame.stack[currentFrame.stack.size - argCount - 1]
 
-                    if (callee !is ObjectValue<*>)
-                        throw runtimeError("Callee must be an object")
-                    if (callee.value !is FunctionObject)
-                        throw runtimeError("Callee must be a function")
-
-                    val values = mutableMapOf<Int, Value<*>>()
-                    (0..<argCount).forEach {
-                        val value = currentFrame.stack.removeLast()
-                        values[it] = value
-
-                        val info = callee.value.params[it]
-                        val expectedType = info.second
-                        val butGot = ExpressionType[value.value]
-
-                        if (expectedType != butGot)
-                            throw runtimeError("Expected $expectedType as argument ${info.first.content} but got $butGot")
-                    }
-
-                    currentFrame.stack.removeLast()
-
-                    frames.addLast(CallFrame(
-                        callee.value,
-                        registry = values
-                    ))
+                    callValue(callee, argCount)
                 }
 
                 Opcode.RETURN.ordinal -> {
-                    val returnValue = currentFrame.stack.removeLast()
+                    val isVoid = currentFrame.function.returnType == null
+
+                    val returnValue = if (!isVoid)
+                        currentFrame.stack.pop()
+                    else null
 
                     frames.removeLast()
                     if (frames.isEmpty())
                         return InterpretResult.OK
 
-                    currentFrame.stack.addLast(returnValue)
+                    returnValue?.let { currentFrame.stack.addLast(it) }
                 }
 
-                else -> throw IllegalStateException("Unexpected opcode $inst")
+                else -> throw IllegalStateException("Unexpected opcode $lastInstruction")
             }
+        }
+    }
+
+    private fun callValue(callee: Value<*>, argCount: Int) {
+        if (callee !is ObjectValue<*>)
+            throw runtimeError("Callee must be an object")
+
+        when (callee.value) {
+            is FunctionObject -> {
+                val isMethod = callee.value.isMethod
+
+                val values = mutableMapOf<Int, Value<*>>()
+                (if (isMethod) {
+                    values[0] = currentFrame.stack[currentFrame.stack.size - argCount - 1]
+                    (1..argCount)
+                } else (0..<argCount)).forEach {
+                    val value = currentFrame.stack.pop()
+                    values[it] = value
+
+                    val info = callee.value.params[it]
+                    val expectedType = info.second
+                    val butGot = ExpressionType[value.value]
+
+                    if (expectedType != butGot)
+                        throw runtimeError("Expected $expectedType as argument ${info.first.content} but got $butGot")
+                }
+
+                currentFrame.stack.pop()
+
+                frames.addLast(CallFrame(
+                    callee.value,
+                    registry = values
+                ))
+            }
+
+            is ClassObject -> {
+                val instance = InstanceObject(
+                    callee.value
+                )
+
+                val init = instance.fields["<init>"]!!
+                if (init.value !is FunctionObject)
+                    throw runtimeError("Init method is not a function object")
+
+                val values = mutableListOf<Value<*>>()
+                (0..<argCount).forEach {
+                    val value = currentFrame.stack.pop()
+                    values.add(value)
+
+                    val info = (init.value as FunctionObject).params[it]
+                    val expectedType = info.second
+                    val butGot = ExpressionType[value.value]
+
+                    if (expectedType != butGot)
+                        throw runtimeError("Expected $expectedType as argument ${info.first.content} but got $butGot")
+                }
+
+                val objectValue = ObjectValue(
+                    instance
+                )
+
+                currentFrame.stack.addLast(objectValue)
+                currentFrame.stack.addLast(objectValue)
+                currentFrame.stack.addAll(values)
+
+                callValue(init, argCount)
+            }
+
+            else -> throw runtimeError("Callee must be callable")
+        }
+    }
+
+    private fun <E> ArrayDeque<E>.dup() {
+        try {
+            addLast(last())
+        } catch (e: NoSuchElementException) {
+            throw runtimeError("Stack underflow")
+        }
+    }
+
+    private fun <E> ArrayDeque<E>.pop(): E {
+        try {
+            return removeLast()
+        } catch (e: NoSuchElementException) {
+            throw runtimeError("Stack underflow")
         }
     }
 
@@ -386,31 +525,52 @@ class VM(private var chunk: Chunk?) {
             it.accept(deadCodeEliminator)
         }
 
-        println(ast)
-
         val compiler = Compiler()
         ast.forEach {
             it.accept(compiler)
         }
 
-        val function = compiler.functions.find { it.name == "main" }
-        if (function != null) {
-            frames.addLast(CallFrame(
-                function
-            ))
+        compiler.script.code.writeConstant(
+            ObjectValue(
+                NullObject
+            ),
+            -1
+        )
 
-            this.chunk = function.code
+        compiler.script.code.write(
+            Opcode.RETURN,
+            -1
+        )
 
-            return try {
-                run()
-            } catch (e: IllegalStateException) {
-                e.printStackTrace()
+        frames.addLast(CallFrame(
+            compiler.script
+        ))
 
-                InterpretResult.RUNTIME_ERROR
-            }
+        this.chunk = compiler.script.code
+
+        try {
+            run()
+        } catch (e: Exception) {
+            e.printStackTrace()
+
+            return InterpretResult.RUNTIME_ERROR
         }
 
-        return InterpretResult.OK
+        val mainFunction = compiler.functions.first { it.isMainFunction }
+
+        frames.addLast(CallFrame(
+            mainFunction
+        ))
+
+        this.chunk = mainFunction.code
+
+        return try {
+            run()
+        } catch (e: Exception) {
+            e.printStackTrace()
+
+            return InterpretResult.RUNTIME_ERROR
+        }
     }
 }
 

@@ -1,27 +1,84 @@
 class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
     val functions = mutableListOf<FunctionObject>()
 
+    val script = FunctionObject("<script>", Chunk(), listOf(), null)
+
     private var function: FunctionObject? = null
     private val chunk: Chunk
         get() = function!!.code
 
-    private val globals = mutableMapOf<Int, Value<*>>()
+    override fun visit(classStatement: ClassStatement) {
+        script.code.writeConstant(
+            ObjectValue(
+                ClassObject(
+                    classStatement.name.content,
+                    mutableMapOf(*(classStatement.methods.map { it ->
+                        this.function = FunctionObject(
+                            it.name.content,
+                            Chunk(),
+                            it.params,
+                            it.returnValue
+                        )
+
+                        it.body.forEach {
+                            it.accept(this)
+                        }
+
+                        val func = this.function!!
+                        func.isMethod = true
+
+                        this.function = script
+
+                        func.name to func
+                    }.toTypedArray()))
+                )
+            ),
+            classStatement.line
+        )
+
+        script.code.write(
+            Opcode.STORE_GLOBAL,
+            classStatement.line
+        )
+
+        script.code.write(
+            classStatement.index,
+            classStatement.line
+        )
+    }
 
     override fun visit(function: FunctionStatement) {
-        this.function = FunctionObject(function.name.content, Chunk(), function.params)
+        this.function = FunctionObject(function.name.content, Chunk(), function.params, function.returnValue)
 
         function.body.forEach {
             it.accept(this)
         }
 
-        chunk.writeConstant(ObjectValue(NullObject), function.line)
-        chunk.write(Opcode.RETURN, function.line)
-
-        globals[function.index] = ObjectValue(
-            this.function!!
-        )
+        if (function.name.content == "main")
+            this.function!!.isMainFunction = true
 
         functions.add(this.function!!)
+
+        val compiled = this.function!!
+
+        this.function = null
+
+        script.code.writeConstant(
+            ObjectValue(
+                compiled
+            ),
+            function.line
+        )
+
+        script.code.write(
+            Opcode.STORE_GLOBAL,
+            function.line
+        )
+
+        script.code.write(
+            function.index,
+            function.line
+        )
     }
 
     private fun emitJump(opcode: Opcode, line: Int): Int {
@@ -108,9 +165,8 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
     }
 
     override fun visit(returnStatement: ReturnStatement) {
-        if (returnStatement.returnValue == null)
-            visit(LiteralExpression(NullObject, returnStatement.line))
-        else returnStatement.returnValue!!.accept(this)
+        if (returnStatement.returnValue != null)
+            returnStatement.returnValue!!.accept(this)
 
         chunk.write(Opcode.RETURN, returnStatement.line)
     }
@@ -169,6 +225,39 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
         }
     }
 
+    override fun visit(setProperty: SetPropertyExpression) {
+        setProperty.parent.accept(this)
+        setProperty.assigned.accept(this)
+
+        chunk.constants.add(ObjectValue(StringObject(setProperty.name.content)))
+
+        chunk.write(
+            Opcode.SET,
+            setProperty.name.line
+        )
+
+        chunk.write(
+            chunk.constants.size - 1,
+            setProperty.name.line
+        )
+    }
+
+    override fun visit(getProperty: GetPropertyExpression) {
+        getProperty.parent.accept(this)
+
+        chunk.constants.add(ObjectValue(StringObject(getProperty.name.content)))
+
+        chunk.write(
+            Opcode.GET,
+            getProperty.name.line
+        )
+
+        chunk.write(
+            chunk.constants.size - 1,
+            getProperty.name.line
+        )
+    }
+
     override fun visit(call: CallExpression) {
         call.callee.accept(this)
 
@@ -188,14 +277,8 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
     }
 
     override fun visit(getVariable: GetVariableExpression) {
-        if (getVariable.isGlobal) {
-            globals[getVariable.index]?.let { chunk.writeConstant(it, getVariable.name.line) }
-
-            return
-        }
-
         chunk.write(
-            Opcode.LOAD, getVariable.name.line
+            if (getVariable.isGlobal) Opcode.LOAD_GLOBAL else Opcode.LOAD, getVariable.name.line
         )
 
         chunk.write(getVariable.index, getVariable.name.line)

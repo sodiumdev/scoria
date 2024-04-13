@@ -8,6 +8,7 @@ private val NAME_TO_TYPE_MAP = mapOf(
 )
 
 data class Local(val index: Int, val type: ExpressionType, var value: Expression?, val isGlobal: Boolean, var isUsed: Boolean = false)
+data class Field(val type: ExpressionType, var value: Expression?)
 
 class Environment(private var parent: Environment?) {
     private val locals = mutableMapOf<String, Local>()
@@ -121,7 +122,7 @@ class Parser(source: String) {
             return GroupingExpression(expr, previous!!.line)
         }
 
-        throw IllegalStateException()
+        throw IllegalStateException("Error on token: ${current!!}")
     }
 
     private fun finishCall(callee: Expression): Expression {
@@ -144,8 +145,10 @@ class Parser(source: String) {
         var expr = primary()
 
         while (true) {
-            if (match(TokenType.LEFT_PAREN)) {
-                expr = finishCall(expr)
+            expr = if (match(TokenType.LEFT_PAREN)) {
+                finishCall(expr)
+            } else if (match(TokenType.DOT)) {
+                GetPropertyExpression(consume(TokenType.IDENTIFIER, "Expected property name after \".\""), expr)
             } else break
         }
 
@@ -244,6 +247,8 @@ class Parser(source: String) {
                 environment.assign(expr.name.content, newLocal)
 
                 return AssignVariableExpression(expr.name, value, newLocal)
+            } else if (expr is GetPropertyExpression) {
+                return SetPropertyExpression(expr.name, expr.parent, value)
             }
 
             throw errorAt(equals, "Invalid assignment target")
@@ -417,6 +422,122 @@ class Parser(source: String) {
         return NAME_TO_TYPE_MAP[typeName.content]!!
     }
 
+    private fun classDeclaration(): Statement {
+        val name = consume(TokenType.IDENTIFIER, "Expected class name")
+        consume(TokenType.LEFT_BRACE, "Expected \"{\" before class body")
+
+        val methods = mutableListOf<FunctionStatement>()
+        val fields = mutableMapOf<String, Field>()
+
+        while (!check(TokenType.RIGHT_BRACE) && !atEnd) {
+            if (match(TokenType.FN)) {
+                val methodName = if (match(TokenType.IDENTIFIER))
+                    previous!!
+                else Token(TokenType.IDENTIFIER, "<init>", previous!!.line)
+
+                val previous = environment
+                environment = Environment(environment)
+
+                environment["this"] = Local(
+                    0,
+                    ExpressionType.OBJECT,
+                    null,
+                    false
+                )
+
+                consume(TokenType.LEFT_PAREN, "Expect \"(\" after method name")
+
+                val parameters = mutableListOf<Pair<Token, ExpressionType>>()
+                if (!check(TokenType.RIGHT_PAREN)) {
+                    do {
+                        val parameterName = consume(TokenType.IDENTIFIER, "Expected parameter name")
+                        consume(TokenType.COLON, "Expected \":\" after parameter name")
+                        val type = parseTypeName()
+
+                        environment[parameterName.content] = Local(
+                            environment.size,
+                            type,
+                            null,
+                            false
+                        )
+
+                        parameters.add(
+                            parameterName to type
+                        )
+                    } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.RIGHT_PAREN, "Expected \")\" after parameters")
+
+                val returnType: ExpressionType? = if (match(TokenType.COLON))
+                    parseTypeName()
+                else null
+
+                consume(TokenType.LEFT_BRACE, "Expect \"{\" before method body")
+
+                val statements = mutableListOf<Statement>()
+                while (!check(TokenType.RIGHT_BRACE) && !atEnd) {
+                    statements.add(declaration())
+                }
+
+                statements.add(ReturnStatement.NULL)
+
+                environment = previous
+
+                consume(TokenType.RIGHT_BRACE, "Expected \"}\" after block")
+
+                methods.add(
+                    FunctionStatement(methodName, parameters, returnType, statements, methods.size)
+                )
+            } else if (match(TokenType.LET)) {
+                val fieldName = consume(TokenType.IDENTIFIER, "Expected field name")
+
+                var initializer: Expression? = null
+                val type: ExpressionType
+
+                if (match(TokenType.EQUAL)) {
+                    initializer = expression()
+                    type = initializer.type
+                } else if (match(TokenType.COLON)) {
+                    type = parseTypeName()
+                } else throw errorAt(previous!!, "Can't infer field type from nothing")
+
+                consume(TokenType.SEMICOLON, "Expected \";\" after field declaration")
+
+                fields[fieldName.content] = Field(type, initializer)
+            } else throw errorAt(current!!, "Expected \"fn\" or \"let\" in class body")
+        }
+
+        consume(TokenType.RIGHT_BRACE, "Expected \"}\" after class body")
+
+        if (methods.none { it.name.content == "<init>" })
+            methods.add(
+                FunctionStatement(
+                    Token(TokenType.IDENTIFIER, "<init>", name.line),
+                    listOf(),
+                    null,
+                    listOf(
+                        ReturnStatement.NULL
+                    ),
+                    methods.size
+                )
+            )
+
+        val index = globals.size
+        val local = Local(
+            index,
+            ExpressionType.OBJECT,
+            null,
+            true
+        )
+
+        if (name.content == "main")
+            local.isUsed = true
+
+        globals[name.content] = local
+
+        return ClassStatement(name, methods, fields, index)
+    }
+
     private fun functionDeclaration(): Statement {
         val name = consume(TokenType.IDENTIFIER, "Expected function name")
 
@@ -455,6 +576,8 @@ class Parser(source: String) {
         while (!check(TokenType.RIGHT_BRACE) && !atEnd) {
             statements.add(declaration())
         }
+
+        statements.add(ReturnStatement.NULL)
 
         environment = previous
 
@@ -500,6 +623,8 @@ class Parser(source: String) {
 
     private fun declaration(): Statement {
         try {
+            if (match(TokenType.CLASS))
+                return classDeclaration()
             if (match(TokenType.FN))
                 return functionDeclaration()
             if (match(TokenType.LET))

@@ -14,7 +14,7 @@ enum class TokenType {
 
     AND, CLASS, ELSE, FALSE,
     FOR, FN, IF, NULL, OR,
-    RETURN, SUPER, THIS,
+    RETURN, SUPER,
     TRUE, LET, WHILE,
 
     ERROR, END_OF_FILE
@@ -39,7 +39,6 @@ class Scanner(private val source: String) {
             "for" to TokenType.FOR,
             "false" to TokenType.FALSE,
             "fn" to TokenType.FN,
-            "this" to TokenType.THIS,
             "true" to TokenType.TRUE
         )
     }
