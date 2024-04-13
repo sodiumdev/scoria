@@ -583,6 +583,7 @@ class VM(private var chunk: Chunk?) {
         ))
 
         this.chunk = mainFunction.code
+        this.chunk?.disassemble()
 
         return try {
             run()

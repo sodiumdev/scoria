@@ -249,7 +249,7 @@ class Parser(source: String) {
                 )
                 environment.assign(expr.name.content, newLocal)
 
-                return AssignVariableExpression(expr.name, value, newLocal)
+                return AssignVariableExpression(expr.name, value, local, newLocal)
             } else if (expr is GetPropertyExpression) {
                 return SetPropertyExpression(expr.name, expr.parent, value)
             }

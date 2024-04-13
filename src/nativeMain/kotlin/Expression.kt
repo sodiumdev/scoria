@@ -232,7 +232,7 @@ data class GetVariableExpression(val name: Token, val local: Local): Expression 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
-data class AssignVariableExpression(val name: Token, var assigned: Expression, val local: Local): Expression {
+data class AssignVariableExpression(val name: Token, var assigned: Expression, val oldLocal: Local, val local: Local): Expression {
     override val type: ExpressionType
         get() = assigned.type
     override val value: Any?

@@ -1,4 +1,7 @@
 class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
+    private var inLoop: Boolean = false
+    private var isDependedOn: Boolean = false
+
     override fun visit(setProperty: SetPropertyExpression): Expression {
         setProperty.parent = setProperty.parent.accept(this)
         setProperty.assigned = setProperty.assigned.accept(this)
@@ -63,6 +66,15 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     }
 
     override fun visit(getVariable: GetVariableExpression): Expression {
+        if (inLoop) {
+            getVariable.local.shouldFold = false
+            if (getVariable.type != ExpressionType.OBJECT)
+                getVariable.local.isUsed = true
+        }
+
+        if (isDependedOn)
+            getVariable.local.isUsed = true
+
         val value = (if (!getVariable.local.shouldFold)
             null
         else getVariable.local.value?.accept(this)) ?: run {
@@ -79,6 +91,16 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
 
     override fun visit(assignVariable: AssignVariableExpression): Expression {
         assignVariable.assigned = assignVariable.assigned.accept(this)
+
+        if (isDependedOn) {
+            assignVariable.oldLocal.isUsed = true
+            assignVariable.local.isUsed = true
+        }
+
+        if (inLoop) {
+            assignVariable.oldLocal.shouldFold = false
+            assignVariable.local.shouldFold = false
+        }
 
         return assignVariable
     }
@@ -116,8 +138,15 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     }
 
     override fun visit(whileStatement: WhileStatement) {
+        inLoop = true
+
+        isDependedOn = true
         whileStatement.condition = whileStatement.condition.accept(this)
+        isDependedOn = false
+
         whileStatement.body.accept(this)
+
+        inLoop = false
     }
 
     override fun visit(expression: ExpressionStatement) {
@@ -143,7 +172,7 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     }
 }
 
-class DeadCodeEliminator: ExpressionVisitor<Expression?>, StatementVisitor<Statement?> {
+class DeadCodeEliminator: ExpressionVisitor<Expression>, StatementVisitor<Statement?> {
     private var blockReturned: Boolean = false
     override fun visit(classStatement: ClassStatement): Statement {
         classStatement.methods.forEach { it ->
@@ -175,13 +204,15 @@ class DeadCodeEliminator: ExpressionVisitor<Expression?>, StatementVisitor<State
     }
 
     override fun visit(ifStatement: IfStatement): Statement? {
+        if (blockReturned)
+            return null
         if (ifStatement.condition.value == false)
             return ifStatement.elseBranch?.accept(this)
         else if (ifStatement.condition.value == true)
             return ifStatement.thenBranch.accept(this)
 
         blockReturned = false
-        ifStatement.thenBranch = ifStatement.thenBranch.accept(this) ?: ifStatement.thenBranch
+        ifStatement.thenBranch = ifStatement.thenBranch.accept(this) ?: BlockStatement(listOf(), ifStatement.thenBranch.line)
 
         blockReturned = false
         ifStatement.elseBranch = ifStatement.elseBranch?.accept(this)
@@ -190,13 +221,15 @@ class DeadCodeEliminator: ExpressionVisitor<Expression?>, StatementVisitor<State
     }
 
     override fun visit(whileStatement: WhileStatement): Statement? {
+        if (blockReturned)
+            return null
         if (whileStatement.condition.value == false)
             return null
 
-        whileStatement.condition.accept(this)?.let { whileStatement.condition = it }
+        whileStatement.condition = whileStatement.condition.accept(this)
 
         blockReturned = false
-        whileStatement.body = whileStatement.body.accept(this) ?: whileStatement.body
+        whileStatement.body = whileStatement.body.accept(this) ?: BlockStatement(listOf(), whileStatement.body.line)
 
         return whileStatement
     }
@@ -205,7 +238,7 @@ class DeadCodeEliminator: ExpressionVisitor<Expression?>, StatementVisitor<State
         if (blockReturned)
             return null
 
-        expression.expression = expression.expression.accept(this) ?: expression.expression
+        expression.expression = expression.expression.accept(this)
 
         return expression
     }
@@ -214,7 +247,7 @@ class DeadCodeEliminator: ExpressionVisitor<Expression?>, StatementVisitor<State
         if (blockReturned)
             return null
 
-        print.expression = print.expression.accept(this) ?: print.expression
+        print.expression = print.expression.accept(this)
 
         return print
     }
@@ -255,70 +288,66 @@ class DeadCodeEliminator: ExpressionVisitor<Expression?>, StatementVisitor<State
     }
 
     override fun visit(setProperty: SetPropertyExpression): Expression {
-        setProperty.parent = setProperty.parent.accept(this) ?: setProperty.parent
-        setProperty.assigned = setProperty.assigned.accept(this) ?: setProperty.assigned
+        setProperty.parent = setProperty.parent.accept(this)
+        setProperty.assigned = setProperty.assigned.accept(this)
 
         return setProperty
     }
 
     override fun visit(getProperty: GetPropertyExpression): Expression {
-        getProperty.parent = getProperty.parent.accept(this) ?: getProperty.parent
+        getProperty.parent = getProperty.parent.accept(this)
 
         return getProperty
     }
 
     override fun visit(call: CallExpression): Expression {
-        call.callee = call.callee.accept(this) ?: call.callee
+        call.callee = call.callee.accept(this)
         call.arguments = call.arguments.map {
-            it.accept(this) ?: it
+            it.accept(this)
         }
 
         return call
     }
 
     override fun visit(call: MethodCallExpression): Expression {
-        call.callee = call.callee.accept(this) ?: call.callee
+        call.callee = call.callee.accept(this)
         call.arguments = call.arguments.map {
-            it.accept(this) ?: it
+            it.accept(this)
         }
 
         return call
     }
 
     override fun visit(unary: UnaryExpression): Expression {
-        unary.right = unary.right.accept(this) ?: unary.right
+        unary.right = unary.right.accept(this)
 
         return unary
     }
 
     override fun visit(logical: LogicalExpression): Expression {
-        logical.left = logical.left.accept(this) ?: logical.left
-        logical.right = logical.right.accept(this) ?: logical.right
+        logical.left = logical.left.accept(this)
+        logical.right = logical.right.accept(this)
 
         return logical
     }
 
     override fun visit(binary: BinaryExpression): Expression {
-        binary.left = binary.left.accept(this) ?: binary.left
-        binary.right = binary.right.accept(this) ?: binary.right
+        binary.left = binary.left.accept(this)
+        binary.right = binary.right.accept(this)
 
         return binary
     }
 
     override fun visit(getVariable: GetVariableExpression) = getVariable
 
-    override fun visit(assignVariable: AssignVariableExpression): Expression? {
-        if (!assignVariable.local.isUsed) {
-            if (assignVariable.assigned.hasCall)
-                return assignVariable.assigned.accept(this)
-
-            return null
-        }
+    override fun visit(assignVariable: AssignVariableExpression): Expression {
+        if (assignVariable.local.shouldFold)
+            return assignVariable.assigned.accept(this)
 
         return assignVariable
     }
 
-    override fun visit(grouping: GroupingExpression) = grouping.groupedValue.accept(this) ?: grouping.groupedValue
+    override fun visit(grouping: GroupingExpression) = grouping.groupedValue.accept(this)
 
     override fun visit(literal: LiteralExpression) = literal
 }
