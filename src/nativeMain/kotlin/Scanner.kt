@@ -1,10 +1,13 @@
 enum class TokenType {
     LEFT_PAREN, RIGHT_PAREN,
     LEFT_BRACE, RIGHT_BRACE,
-    COMMA, DOT, MINUS, PLUS,
-    SEMICOLON, SLASH, STAR,
-    COLON,
+    COMMA, DOT,
+    SEMICOLON, COLON,
 
+    MINUS, MINUS_EQUAL,
+    PLUS, PLUS_EQUAL,
+    SLASH, SLASH_EQUAL,
+    STAR, STAR_EQUAL,
     BANG, BANG_EQUAL,
     EQUAL, EQUAL_EQUAL,
     GREATER, GREATER_EQUAL,
@@ -61,7 +64,11 @@ enum class TokenType {
             WHILE -> false
             ERROR -> false
             END_OF_FILE -> false
-    }
+            MINUS_EQUAL -> false
+            PLUS_EQUAL -> false
+            SLASH_EQUAL -> false
+            STAR_EQUAL -> false
+        }
 }
 
 data class Token(val type: TokenType, val content: String, val line: Int) {
@@ -127,10 +134,22 @@ class Scanner(private val source: String) {
             ':' -> return makeToken(TokenType.COLON)
             ',' -> return makeToken(TokenType.COMMA)
             '.' -> return makeToken(TokenType.DOT)
-            '-' -> return makeToken(TokenType.MINUS)
-            '+' -> return makeToken(TokenType.PLUS)
-            '/' -> return makeToken(TokenType.SLASH)
-            '*' -> return makeToken(TokenType.STAR)
+
+            '-' -> return makeToken(
+                if (match('=')) TokenType.MINUS_EQUAL else TokenType.MINUS
+            )
+
+            '+' -> return makeToken(
+                if (match('=')) TokenType.PLUS_EQUAL else TokenType.PLUS
+            )
+
+            '/' -> return makeToken(
+                if (match('=')) TokenType.SLASH_EQUAL else TokenType.SLASH
+            )
+
+            '*' -> return makeToken(
+                if (match('=')) TokenType.STAR_EQUAL else TokenType.STAR
+            )
 
             '!' -> return makeToken(
                 if (match('=')) TokenType.BANG_EQUAL else TokenType.BANG

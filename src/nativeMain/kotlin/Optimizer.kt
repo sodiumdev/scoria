@@ -95,6 +95,9 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
         if (isDependedOn) {
             assignVariable.oldLocal.isUsed = true
             assignVariable.local.isUsed = true
+
+            assignVariable.oldLocal.shouldFold = false
+            assignVariable.local.shouldFold = false
         }
 
         if (inLoop) {
@@ -266,6 +269,7 @@ class DeadCodeEliminator: ExpressionVisitor<Expression>, StatementVisitor<Statem
     override fun visit(declareVariable: VariableDeclarationStatement): Statement? {
         if (blockReturned)
             return null
+
         if (!declareVariable.isUsed) {
             if (declareVariable.init?.hasCall == true)
                 return ExpressionStatement(declareVariable.init!!, declareVariable.line)
@@ -341,9 +345,6 @@ class DeadCodeEliminator: ExpressionVisitor<Expression>, StatementVisitor<Statem
     override fun visit(getVariable: GetVariableExpression) = getVariable
 
     override fun visit(assignVariable: AssignVariableExpression): Expression {
-        if (assignVariable.local.shouldFold)
-            return assignVariable.assigned.accept(this)
-
         return assignVariable
     }
 

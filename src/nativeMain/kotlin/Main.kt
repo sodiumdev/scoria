@@ -5,8 +5,8 @@ fun main() {
 fn main() {
   let a = 0
   while a < 25 {
-    a = a + 1
     : a
+    a += 1
   }
 }
     """.trimIndent())
