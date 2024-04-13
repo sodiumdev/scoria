@@ -232,12 +232,13 @@ class Parser(source: String) {
     private fun assignment(): Expression {
         val expr = or()
 
-        if (match(TokenType.EQUAL)) {
-            val equals = previous!!
-            val value = assignment()
+        if (match(TokenType.EQUAL, TokenType.MINUS_EQUAL, TokenType.PLUS_EQUAL, TokenType.STAR_EQUAL, TokenType.SLASH_EQUAL)) {
+            val operator = previous!!
+            var value = assignment()
 
             if (expr is GetVariableExpression) {
                 val local = expr.local
+                val name = expr.name
 
                 val newLocal = Local(
                     local.index,
@@ -247,14 +248,41 @@ class Parser(source: String) {
                     isUsed = local.isUsed,
                     shouldFold = value.type != ExpressionType.OBJECT
                 )
-                environment.assign(expr.name.content, newLocal)
+                environment.assign(name.content, newLocal)
 
-                return AssignVariableExpression(expr.name, value, local, newLocal)
+                value = when (operator.type) {
+                    TokenType.EQUAL -> value
+
+                    TokenType.MINUS_EQUAL -> BinaryExpression(
+                        expr,
+                        value,
+                        Token(TokenType.MINUS, "-", operator.line)
+                    )
+                    TokenType.PLUS_EQUAL -> BinaryExpression(
+                        expr,
+                        value,
+                        Token(TokenType.PLUS, "+", operator.line)
+                    )
+                    TokenType.STAR_EQUAL -> BinaryExpression(
+                        expr,
+                        value,
+                        Token(TokenType.STAR, "*", operator.line)
+                    )
+                    TokenType.SLASH_EQUAL -> BinaryExpression(
+                        expr,
+                        value,
+                        Token(TokenType.SLASH, "/", operator.line)
+                    )
+
+                    else -> throw errorAt(operator, "Invalid assignment operator")
+                }
+
+                return AssignVariableExpression(name, value, local, newLocal)
             } else if (expr is GetPropertyExpression) {
                 return SetPropertyExpression(expr.name, expr.parent, value)
             }
 
-            throw errorAt(equals, "Invalid assignment target")
+            throw errorAt(operator, "Invalid assignment target")
         }
 
         return expr
