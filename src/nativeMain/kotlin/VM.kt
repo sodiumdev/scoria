@@ -476,12 +476,9 @@ class VM(private var chunk: Chunk?) {
                         throw runtimeError("Expected $expectedType as argument ${info.first.content} but got $butGot")
                 }
 
-                val objectValue = ObjectValue(
-                    instance
-                )
+                currentFrame.stack.addLast(ObjectValue(instance))
+                currentFrame.stack.dup()
 
-                currentFrame.stack.addLast(objectValue)
-                currentFrame.stack.addLast(objectValue)
                 currentFrame.stack.addAll(values)
 
                 callValue(init, argCount)

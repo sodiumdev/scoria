@@ -2,18 +2,19 @@ fun main() {
     val vm = VM(null)
 
     vm.interpret(""" 
-class HiLmao {
-    fn() {
-        : "init";
-    }
+class Example {
+  let field = 1 
+  fn() { }
 
-    fn print() {
-        : "this";
-    }
+  fn sayHi() {
+    : "hi"
+  }
 }
-        
+
 fn main() {
-    HiLmao().print();
+  let example = Example()
+
+  example.sayHi()
 }
     """.trimIndent())
 }

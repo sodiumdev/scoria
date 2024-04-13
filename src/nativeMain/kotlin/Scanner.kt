@@ -17,10 +17,56 @@ enum class TokenType {
     RETURN, SUPER,
     TRUE, LET, WHILE,
 
-    ERROR, END_OF_FILE
+    ERROR, END_OF_FILE;
+
+    val couldStartExpression: Boolean
+        get() = when (this) {
+            LEFT_PAREN -> true
+            RIGHT_PAREN -> false
+            LEFT_BRACE -> true
+            RIGHT_BRACE -> false
+            COMMA -> false
+            DOT -> false
+            MINUS -> true
+            PLUS -> true
+            SEMICOLON -> false
+            SLASH -> false
+            STAR -> false
+            COLON -> false
+            BANG -> true
+            BANG_EQUAL -> false
+            EQUAL -> false
+            EQUAL_EQUAL -> false
+            GREATER -> false
+            GREATER_EQUAL -> false
+            LESS -> false
+            LESS_EQUAL -> false
+            IDENTIFIER -> true
+            STRING -> true
+            FLOAT -> true
+            INTEGER -> true
+            AND -> false
+            CLASS -> false
+            ELSE -> false
+            FALSE -> true
+            FOR -> false
+            FN -> false
+            IF -> false
+            NULL -> true
+            OR -> false
+            RETURN -> false
+            SUPER -> false
+            TRUE -> true
+            LET -> false
+            WHILE -> false
+            ERROR -> false
+            END_OF_FILE -> false
+    }
 }
 
-data class Token(val type: TokenType, val content: String, val line: Int)
+data class Token(val type: TokenType, val content: String, val line: Int) {
+    val couldStartExpression: Boolean = type.couldStartExpression
+}
 
 class Scanner(private val source: String) {
     companion object {

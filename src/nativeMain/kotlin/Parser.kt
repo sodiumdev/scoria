@@ -42,7 +42,9 @@ class Environment(private var parent: Environment?) {
 
 class Parser(source: String) {
     companion object {
-        fun errorAt(token: Token, message: String) = IllegalStateException(
+        private const val SEMICOLON_INFERENCE_ERROR_MESSAGE = "There can't be more than one statement in one line! Try separating the statements with \";\""
+
+        private fun errorAt(token: Token, message: String) = IllegalStateException(
             "[line %d] Error" + (
                     if (token.type == TokenType.END_OF_FILE)
                         " at end: $message"
@@ -63,6 +65,8 @@ class Parser(source: String) {
 
     private var current: Token? = null
     private var previous: Token? = null
+
+    private var previousStatementLine: Int? = null
 
     private val globals = Environment(null)
     private var environment = globals
@@ -261,14 +265,12 @@ class Parser(source: String) {
 
     private fun printStatement(): Statement {
         val value = expression()
-        consume(TokenType.SEMICOLON, "Expected \";\" after print value")
 
         return PrintStatement(value, previous!!.line)
     }
 
     private fun expressionStatement(): Statement {
         val expression = expression()
-        consume(TokenType.SEMICOLON, "Expected \";\" after expression")
 
         return ExpressionStatement(expression, previous!!.line)
     }
@@ -323,7 +325,7 @@ class Parser(source: String) {
         val initializer: Statement? = if (match(TokenType.SEMICOLON))
             null
         else if (match(TokenType.LET))
-            variableDeclaration()
+            variableDeclarationStatement()
         else expressionStatement()
 
         var condition: Expression? = null
@@ -364,34 +366,33 @@ class Parser(source: String) {
         val keyword = previous!!
 
         var value: Expression? = null
-        if (!check(TokenType.SEMICOLON))
+        if (!current!!.couldStartExpression)
             value = expression()
 
-        consume(TokenType.SEMICOLON, "Expected \";\" after return value")
         return ReturnStatement(keyword, value)
     }
 
     private fun statement(): Statement {
-        if (match(TokenType.FOR))
-            return forStatement()
-        if (match(TokenType.IF))
-            return ifStatement()
-        if (match(TokenType.WHILE))
-            return whileStatement()
-        if (match(TokenType.RETURN))
-            return returnStatement()
-        if (match(TokenType.COLON))
-            return printStatement()
-        if (match(TokenType.LEFT_BRACE)) {
+        return if (match(TokenType.LET))
+            variableDeclarationStatement()
+        else if (match(TokenType.FOR))
+            forStatement()
+        else if (match(TokenType.IF))
+            ifStatement()
+        else if (match(TokenType.WHILE))
+            whileStatement()
+        else if (match(TokenType.RETURN))
+            returnStatement()
+        else if (match(TokenType.COLON))
+            printStatement()
+        else if (match(TokenType.LEFT_BRACE)) {
             val line = previous!!.line
 
-            return BlockStatement(block(), line)
-        }
-
-        return expressionStatement()
+            BlockStatement(block(), line)
+        } else expressionStatement()
     }
 
-    private fun variableDeclaration(): Statement {
+    private fun variableDeclarationStatement(): Statement {
         val name = consume(TokenType.IDENTIFIER, "Expected variable name")
 
         var initializer: Expression? = null
@@ -403,8 +404,6 @@ class Parser(source: String) {
         } else if (match(TokenType.COLON)) {
             type = parseTypeName()
         } else throw errorAt(previous!!, "Can't infer variable type from nothing")
-
-        consume(TokenType.SEMICOLON, "Expected \";\" after variable declaration")
 
         val local = Local(
             environment.size,
@@ -430,6 +429,9 @@ class Parser(source: String) {
         val fields = mutableMapOf<String, Field>()
 
         while (!check(TokenType.RIGHT_BRACE) && !atEnd) {
+            if (!match(TokenType.SEMICOLON) && previousStatementLine == current!!.line)
+                throw errorAt(current!!, SEMICOLON_INFERENCE_ERROR_MESSAGE)
+
             if (match(TokenType.FN)) {
                 val methodName = if (match(TokenType.IDENTIFIER))
                     previous!!
@@ -484,6 +486,7 @@ class Parser(source: String) {
                 environment = previous
 
                 consume(TokenType.RIGHT_BRACE, "Expected \"}\" after block")
+                previousStatementLine = this.previous!!.line
 
                 methods.add(
                     FunctionStatement(methodName, parameters, returnType, statements, methods.size)
@@ -501,7 +504,7 @@ class Parser(source: String) {
                     type = parseTypeName()
                 } else throw errorAt(previous!!, "Can't infer field type from nothing")
 
-                consume(TokenType.SEMICOLON, "Expected \";\" after field declaration")
+                previousStatementLine = previous!!.line
 
                 fields[fieldName.content] = Field(type, initializer)
             } else throw errorAt(current!!, "Expected \"fn\" or \"let\" in class body")
@@ -623,14 +626,18 @@ class Parser(source: String) {
 
     private fun declaration(): Statement {
         try {
-            if (match(TokenType.CLASS))
-                return classDeclaration()
-            if (match(TokenType.FN))
-                return functionDeclaration()
-            if (match(TokenType.LET))
-                return variableDeclaration()
+            if (!match(TokenType.SEMICOLON) && previousStatementLine == current!!.line)
+                throw errorAt(current!!, SEMICOLON_INFERENCE_ERROR_MESSAGE)
 
-            return statement()
+            val value = if (match(TokenType.CLASS))
+                classDeclaration()
+            else if (match(TokenType.FN))
+                functionDeclaration()
+            else statement()
+
+            previousStatementLine = previous!!.line
+
+            return value
         } catch (e: IllegalStateException) {
             synchronize()
 
