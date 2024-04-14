@@ -521,10 +521,6 @@ class VM(private var chunk: Chunk?) {
 
                 currentFrame.stack.pop()
 
-                println()
-                println("== ${callee.value.name} ==")
-                callee.value.code.disassemble()
-
                 frames.addLast(CallFrame(
                     callee.value,
                     registry = values,

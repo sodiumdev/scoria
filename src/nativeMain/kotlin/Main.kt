@@ -3,7 +3,9 @@ fun main() {
 
     vm.interpret("""   
 fn main() {
-  a()
+  for let a = 0; a < 25; a += 1 {
+    : a
+  }
 }
     """.trimIndent())
 }
