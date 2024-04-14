@@ -19,6 +19,29 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
                             it.returnValue
                         )
 
+                        if (it.name.content == "<init>") {
+                            val line = it.name.line
+                            classStatement.fields.forEach {
+                                it.value.value?.accept(this) ?: chunk.writeConstant(
+                                    line,
+                                    NullValue
+                                )
+
+                                chunk.write(
+                                    line,
+                                    Opcode.LOAD,
+                                    0
+                                )
+
+                                chunk.constants.add(ObjectValue(StringObject(it.key)))
+                                chunk.write(
+                                    line,
+                                    Opcode.SET,
+                                    chunk.constants.size - 1
+                                )
+                            }
+                        }
+
                         it.body.forEach {
                             it.accept(this)
                         }
@@ -193,7 +216,7 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
             } else declareVariable.init!!.accept(this)
         } else chunk.writeConstant(
             declareVariable.line,
-            ObjectValue(NullObject)
+            NullValue
         )
 
         chunk.write(

@@ -45,7 +45,7 @@ class Parser(source: String) {
         private const val SEMICOLON_INFERENCE_ERROR_MESSAGE = "There can't be more than one statement in one line! Try separating the statements with \";\""
 
         private fun errorAt(token: Token, message: String) = IllegalStateException(
-            "[line %d] Error" + (
+            "[line ${token.line}] Error" + (
                     if (token.type == TokenType.END_OF_FILE)
                         " at end: $message"
                     else if (token.type != TokenType.ERROR)
@@ -55,6 +55,7 @@ class Parser(source: String) {
     }
 
     private var scanner = Scanner(source)
+    private var currentReturnType: ExpressionType? = null
 
     init {
         advance()
@@ -407,6 +408,9 @@ class Parser(source: String) {
         if (current!!.couldStartExpression)
             value = expression()
 
+        if (value?.type != currentReturnType)
+            throw errorAt(keyword, "Invalid return type!")
+
         return ReturnStatement(keyword, value)
     }
 
@@ -517,7 +521,7 @@ class Parser(source: String) {
                 }
                 consume(TokenType.RIGHT_PAREN, "Expected \")\" after parameters")
 
-                val returnType: ExpressionType? = if (match(TokenType.COLON))
+                currentReturnType = if (match(TokenType.COLON))
                     parseTypeName()
                 else null
 
@@ -536,8 +540,10 @@ class Parser(source: String) {
                 previousStatementLine = this.previous!!.line
 
                 methods.add(
-                    FunctionStatement(methodName, parameters, returnType, statements, methods.size)
+                    FunctionStatement(methodName, parameters, currentReturnType, statements, methods.size)
                 )
+
+                currentReturnType = null
             } else if (match(TokenType.LET)) {
                 val fieldName = consume(TokenType.IDENTIFIER, "Expected field name")
 
@@ -617,7 +623,7 @@ class Parser(source: String) {
         }
         consume(TokenType.RIGHT_PAREN, "Expected \")\" after parameters")
 
-        val returnType: ExpressionType? = if (match(TokenType.COLON))
+        currentReturnType = if (match(TokenType.COLON))
             parseTypeName()
         else null
 
@@ -648,7 +654,10 @@ class Parser(source: String) {
 
         globals[name.content] = local
 
-        return FunctionStatement(name, parameters, returnType, statements, index)
+        val value = FunctionStatement(name, parameters, currentReturnType, statements, index)
+        currentReturnType = null
+
+        return value
     }
 
     private fun synchronize() {

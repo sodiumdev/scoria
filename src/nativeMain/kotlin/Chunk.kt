@@ -52,6 +52,7 @@ enum class Opcode {
     GET_IP,
 
     SET,
+    SET_LDC,
 
     CALL,
     CALL_POP,

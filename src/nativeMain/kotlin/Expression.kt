@@ -74,7 +74,7 @@ sealed interface Expression {
             ExpressionType.DOUBLE -> DoubleValue(value as Double)
             ExpressionType.LONG -> LongValue(value as Long)
             ExpressionType.BOOLEAN -> BooleanValue(value as Boolean)
-            ExpressionType.OBJECT -> ObjectValue(value as Object)
+            ExpressionType.OBJECT -> value?.let { ObjectValue(it as Object) } ?: NullValue
         }
 
     fun <R> accept(visitor: ExpressionVisitor<R>): R
@@ -295,6 +295,6 @@ data class LiteralExpression(override val value: Any?, val line: Int): Expressio
         ExpressionType.FLOAT -> FloatValue(value!! as Float)
         ExpressionType.DOUBLE -> DoubleValue(value!! as Double)
         ExpressionType.LONG -> LongValue(value!! as Long)
-        ExpressionType.OBJECT -> ObjectValue(value?.let { it as Object } ?: NullObject)
+        ExpressionType.OBJECT -> value?.let { ObjectValue(it as Object) } ?: NullValue
     }
 }

@@ -54,19 +54,19 @@ class FloatValue(override val value: Float): NumberValue<Float>() {
 
 sealed interface Object
 
-data object NullObject: Object {
+object NullObject: Object {
     override fun toString(): String {
         return "null"
     }
 }
 
-data class StringObject(var string: String): Object {
+class StringObject(var string: String): Object {
     override fun toString(): String {
         return string
     }
 }
 
-data class FunctionObject(var name: String, var code: Chunk, var params: List<Pair<Token, ExpressionType>>, val returnType: ExpressionType?): Object {
+class FunctionObject(var name: String, var code: Chunk, var params: List<Pair<Token, ExpressionType>>, val returnType: ExpressionType?): Object {
     var isMethod: Boolean = false
 
     override fun toString(): String {
@@ -77,7 +77,7 @@ data class FunctionObject(var name: String, var code: Chunk, var params: List<Pa
     }
 }
 
-data class ClassObject(var name: String, val methods: MutableMap<String, FunctionObject> = mutableMapOf()): Object {
+class ClassObject(var name: String, val methods: MutableMap<String, FunctionObject> = mutableMapOf()): Object {
     override fun toString(): String {
         val unsignedHashCode = this.hashCode().toLong() and 0xffffffffL
         val hashCodeStr = unsignedHashCode.toString(16)
@@ -86,7 +86,7 @@ data class ClassObject(var name: String, val methods: MutableMap<String, Functio
     }
 }
 
-data class InstanceObject(val clazz: ClassObject, val fields: MutableMap<String, Value<*>> = mutableMapOf()): Object {
+class InstanceObject(val clazz: ClassObject, val fields: MutableMap<String, Value<*>> = mutableMapOf()): Object {
     init {
         fields.putAll(clazz.methods.mapValues { ObjectValue(it.value) })
     }
@@ -100,3 +100,5 @@ data class InstanceObject(val clazz: ClassObject, val fields: MutableMap<String,
 }
 
 class ObjectValue<T: Object>(override val value: T): Value<T>()
+
+val NullValue = ObjectValue(NullObject)

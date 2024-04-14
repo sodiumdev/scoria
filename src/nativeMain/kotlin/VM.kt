@@ -17,6 +17,10 @@ class VM(private var chunk: Chunk?) {
     private var lastInstruction: Int = -1
 
     private fun runtimeError(message: String): Throwable {
+        println("== Current Chunk ==")
+        currentFrame.function.code.disassemble()
+        println("== End ==")
+
         return IllegalStateException("Error at instruction ${Opcode.entries[lastInstruction]}: $message")
     }
 
@@ -312,7 +316,8 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.STORE.ordinal -> {
-                    currentFrame.registry[readByte().toInt()] = currentFrame.stack.pop()
+                    val addr = readByte().toInt()
+                    currentFrame.registry[addr] = currentFrame.stack.pop()
                 }
 
                 Opcode.STORE_GLOBAL.ordinal -> {
@@ -420,6 +425,19 @@ class VM(private var chunk: Chunk?) {
                     (instance.value as InstanceObject).fields[name] = currentFrame.stack.pop()
                 }
 
+                Opcode.SET_LDC.ordinal -> {
+                    val name = readConstant().value.toString()
+                    val value = readConstant()
+
+                    val instance = currentFrame.stack.pop()
+                    if (instance !is ObjectValue)
+                        throw runtimeError("Parent should be an object")
+                    if (instance.value !is InstanceObject)
+                        throw runtimeError("Parent should be an instance")
+
+                    (instance.value as InstanceObject).fields[name] = value
+                }
+
                 Opcode.CALL.ordinal -> {
                     val argCount = readByte().toInt()
                     if (currentFrame.stack.size < argCount + 1)
@@ -477,7 +495,7 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.RETURN.ordinal -> {
-                    val isVoid = currentFrame.shouldPop || currentFrame.function.returnType == null
+                    val isVoid = currentFrame.function.returnType == null || currentFrame.shouldPop
 
                     val returnValue = if (!isVoid)
                         currentFrame.stack.pop()
