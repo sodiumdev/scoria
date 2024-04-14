@@ -7,11 +7,18 @@ enum class Opcode {
     ADD_IP,
     MULTIPLY_IP,
     DIVIDE_IP,
+    SUBTRACT_IP,
+
     NEGATE_IP,
 
     ADD_FT,
     MULTIPLY_FT,
     DIVIDE_FT,
+    SUBTRACT_FT,
+
+    INVERT_BOOLEAN,
+    INVERT_BOOLEAN_IP,
+    INVERT_BOOLEAN_FT,
 
     IS_GREATER,
     IS_GREATER_EQUAL,
@@ -36,8 +43,8 @@ enum class Opcode {
 
     DUP,
 
-    IFEQ,
-    IFNE,
+    JUMP_IF_TRUE,
+    JUMP_IF_FALSE,
     JUMP,
     LOOP,
 
@@ -47,7 +54,9 @@ enum class Opcode {
     SET,
 
     CALL,
+    CALL_POP,
     CALL_METHOD,
+    CALL_METHOD_POP,
 
     RETURN,
 }
@@ -79,19 +88,21 @@ class Chunk {
         }
     }
 
-    fun write(byte: Int, line: Int) {
-        write(byte.toUByte(), line)
+    fun write(line: Int, vararg bytes: Int) {
+        bytes.forEach {
+            write(it.toUByte(), line)
+        }
     }
 
-    fun write(opcode: Opcode, line: Int) {
-        write(opcode.ordinal, line)
+    fun write(line: Int, opcode: Opcode, vararg bytes: Int) {
+        write(line, opcode.ordinal, *bytes)
     }
 
-    fun writeConstant(constant: Value<*>, line: Int) {
+    fun writeConstant(line: Int, constant: Value<*>) {
         constants.add(constant)
 
-        write(Opcode.LDC, line)
-        write(constants.size - 1, line)
+        write(line, Opcode.LDC)
+        write(line, constants.size - 1)
     }
 
     fun disassemble() {
@@ -269,14 +280,14 @@ class Chunk {
                 1
             }
 
-            Opcode.IFEQ.ordinal -> {
-                println("IFEQ ${readShort(offset + 1)}")
+            Opcode.JUMP_IF_TRUE.ordinal -> {
+                println("JUMP_IF_TRUE ${readShort(offset + 1)}")
 
                 3
             }
 
-            Opcode.IFNE.ordinal -> {
-                println("IFNE ${readShort(offset + 1)}")
+            Opcode.JUMP_IF_FALSE.ordinal -> {
+                println("JUMP_IF_FALSE ${readShort(offset + 1)}")
 
                 3
             }
@@ -317,8 +328,20 @@ class Chunk {
                 2
             }
 
+            Opcode.CALL_POP.ordinal -> {
+                println("CALL_POP ${readByte(offset + 1)}")
+
+                2
+            }
+
             Opcode.CALL_METHOD.ordinal -> {
                 println("CALL_METHOD ${readConstant(offset + 1)} ${readByte(offset + 2)}")
+
+                3
+            }
+
+            Opcode.CALL_METHOD_POP.ordinal -> {
+                println("CALL_METHOD_POP ${readConstant(offset + 1)} ${readByte(offset + 2)}")
 
                 3
             }

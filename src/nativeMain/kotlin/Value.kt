@@ -6,7 +6,7 @@ sealed class Value<T> {
     }
 }
 
-class BooleanValue(override val value: Boolean): Value<Boolean>() {
+class BooleanValue(override var value: Boolean): Value<Boolean>() {
     operator fun not() = BooleanValue(!value)
 }
 
@@ -67,7 +67,6 @@ data class StringObject(var string: String): Object {
 }
 
 data class FunctionObject(var name: String, var code: Chunk, var params: List<Pair<Token, ExpressionType>>, val returnType: ExpressionType?): Object {
-    var isMainFunction: Boolean = false
     var isMethod: Boolean = false
 
     override fun toString(): String {

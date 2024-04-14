@@ -4,7 +4,7 @@ enum class InterpretResult {
     OK
 }
 
-data class CallFrame(val function: FunctionObject, var ip: Int = 0, val stack: ArrayDeque<Value<*>> = ArrayDeque(), val registry: MutableMap<Int, Value<*>> = mutableMapOf())
+data class CallFrame(val function: FunctionObject, var ip: Int = 0, val stack: ArrayDeque<Value<*>> = ArrayDeque(), val registry: MutableMap<Int, Value<*>> = mutableMapOf(), val shouldPop: Boolean = false)
 
 class VM(private var chunk: Chunk?) {
     private val frames = ArrayDeque<CallFrame>(64)
@@ -14,10 +14,10 @@ class VM(private var chunk: Chunk?) {
     private val currentFrame: CallFrame
         get() = frames.last()
 
-    private fun runtimeError(message: String): Throwable {
-        val line = currentFrame.function.code.getLine(currentFrame.ip)
+    private var lastInstruction: Int = -1
 
-        return IllegalArgumentException("[line $line] in script: $message")
+    private fun runtimeError(message: String): Throwable {
+        return IllegalStateException("Error at instruction ${Opcode.entries[lastInstruction]}: $message")
     }
 
     private fun readByte(): UByte = currentFrame.function.code.code[currentFrame.ip++]
@@ -26,11 +26,9 @@ class VM(private var chunk: Chunk?) {
 
     private fun run(): InterpretResult {
         while (true) {
-            when (val lastInstruction = readByte().toInt()) {
+            lastInstruction = readByte().toInt()
+            when (lastInstruction) {
                 Opcode.ADD.ordinal -> {
-                    if (currentFrame.stack.size < 2)
-                        throw runtimeError("Stack underflow")
-
                     val b = currentFrame.stack.pop()
                     val a = currentFrame.stack.pop()
 
@@ -43,9 +41,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.MULTIPLY.ordinal -> {
-                    if (currentFrame.stack.size < 2)
-                        throw runtimeError("Stack underflow")
-
                     val b = currentFrame.stack.pop()
                     val a = currentFrame.stack.pop()
 
@@ -58,9 +53,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.DIVIDE.ordinal -> {
-                    if (currentFrame.stack.size < 2)
-                        throw runtimeError("Stack underflow")
-
                     val b = currentFrame.stack.pop()
                     val a = currentFrame.stack.pop()
 
@@ -73,20 +65,14 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.NEGATE.ordinal -> {
-                    if (currentFrame.stack.size < 1)
-                        throw runtimeError("Stack underflow")
-
                     val a = currentFrame.stack.last()
                     if (a !is NumberValue)
                         throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
 
-                    currentFrame.stack[currentFrame.stack.lastIndex] = -a
+                    currentFrame.stack[currentFrame.stack.size - 1] = -a
                 }
 
                 Opcode.ADD_IP.ordinal -> {
-                    if (currentFrame.stack.size < 1)
-                        throw runtimeError("Stack underflow")
-
                     val addr = readByte().toInt()
 
                     val b = currentFrame.stack.pop()
@@ -101,9 +87,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.MULTIPLY_IP.ordinal -> {
-                    if (currentFrame.stack.size < 1)
-                        throw runtimeError("Stack underflow")
-
                     val addr = readByte().toInt()
 
                     val b = currentFrame.stack.pop()
@@ -118,9 +101,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.DIVIDE_IP.ordinal -> {
-                    if (currentFrame.stack.size < 1)
-                        throw runtimeError("Stack underflow")
-
                     val addr = readByte().toInt()
 
                     val b = currentFrame.stack.pop()
@@ -132,6 +112,20 @@ class VM(private var chunk: Chunk?) {
                         throw runtimeError("Expected number but got \"${b::class.simpleName}\"")
 
                     currentFrame.registry[addr] = a / b
+                }
+
+                Opcode.SUBTRACT_IP.ordinal -> {
+                    val addr = readByte().toInt()
+
+                    val b = currentFrame.stack.pop()
+                    val a = currentFrame.registry[addr]!!
+
+                    if (a !is NumberValue)
+                        throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
+                    if (b !is NumberValue)
+                        throw runtimeError("Expected number but got \"${b::class.simpleName}\"")
+
+                    currentFrame.registry[addr] = a - b
                 }
 
                 Opcode.NEGATE_IP.ordinal -> {
@@ -192,10 +186,52 @@ class VM(private var chunk: Chunk?) {
                     currentFrame.registry[addrC] = a / b
                 }
 
-                Opcode.IS_GREATER.ordinal -> {
-                    if (currentFrame.stack.size < 2)
-                        throw runtimeError("Stack underflow")
+                Opcode.SUBTRACT_FT.ordinal -> {
+                    val addrA = readByte().toInt()
+                    val addrB = readByte().toInt()
+                    val addrC = readByte().toInt()
 
+                    val b = currentFrame.registry[addrB]!!
+                    val a = currentFrame.registry[addrA]!!
+
+                    if (a !is NumberValue)
+                        throw runtimeError("Expected number but got \"${a::class.simpleName}\"")
+                    if (b !is NumberValue)
+                        throw runtimeError("Expected number but got \"${b::class.simpleName}\"")
+
+                    currentFrame.registry[addrC] = a - b
+                }
+
+                Opcode.INVERT_BOOLEAN.ordinal -> {
+                    val a = currentFrame.stack.last()
+                    if (a !is BooleanValue)
+                        throw runtimeError("Expected boolean but got \"${a::class.simpleName}\"")
+
+                    a.value = !a.value
+                }
+
+                Opcode.INVERT_BOOLEAN_IP.ordinal -> {
+                    val addrA = readByte().toInt()
+
+                    val a = currentFrame.stack.pop()
+                    if (a !is BooleanValue)
+                        throw runtimeError("Expected boolean but got \"${a::class.simpleName}\"")
+
+                    currentFrame.registry[addrA] = !a
+                }
+
+                Opcode.INVERT_BOOLEAN_FT.ordinal -> {
+                    val addrA = readByte().toInt()
+                    val addrB = readByte().toInt()
+
+                    val a = currentFrame.registry[addrB]!!
+                    if (a !is BooleanValue)
+                        throw runtimeError("Expected boolean but got \"${a::class.simpleName}\"")
+
+                    currentFrame.registry[addrA] = !a
+                }
+
+                Opcode.IS_GREATER.ordinal -> {
                     val b = currentFrame.stack.pop()
                     val a = currentFrame.stack.pop()
 
@@ -208,9 +244,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.IS_GREATER_EQUAL.ordinal -> {
-                    if (currentFrame.stack.size < 2)
-                        throw runtimeError("Stack underflow")
-
                     val b = currentFrame.stack.pop()
                     val a = currentFrame.stack.pop()
 
@@ -223,9 +256,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.IS_LESS.ordinal -> {
-                    if (currentFrame.stack.size < 2)
-                        throw runtimeError("Stack underflow")
-
                     val b = currentFrame.stack.pop()
                     val a = currentFrame.stack.pop()
 
@@ -238,9 +268,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.IS_LESS_EQUAL.ordinal -> {
-                    if (currentFrame.stack.size < 2)
-                        throw runtimeError("Stack underflow")
-
                     val b = currentFrame.stack.pop()
                     val a = currentFrame.stack.pop()
 
@@ -253,38 +280,42 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.LOAD.ordinal -> {
-                    currentFrame.registry[readByte().toInt()]?.let { currentFrame.stack.addLast(it) }
+                    val addrA = readByte().toInt()
+                    val value = currentFrame.registry[addrA] ?: throw runtimeError("Local at address $addrA does not exist")
+
+                    currentFrame.stack.addLast(value)
                 }
 
                 Opcode.LOAD_IP.ordinal -> {
                     val addrA = readByte().toInt()
                     val addrB = readByte().toInt()
 
-                    currentFrame.registry[addrA]?.let { currentFrame.registry[addrB] = it }
+                    val value = currentFrame.registry[addrA] ?: throw runtimeError("Local at address $addrA does not exist")
+
+                    currentFrame.registry[addrB] = value
                 }
 
                 Opcode.LOAD_GLOBAL.ordinal -> {
-                    globals[readByte().toInt()]?.let { currentFrame.stack.addLast(it) }
+                    val addrA = readByte().toInt()
+                    val value = globals[addrA] ?: throw runtimeError("Global at address $addrA does not exist")
+
+                    currentFrame.stack.addLast(value)
                 }
 
                 Opcode.LOAD_GLOBAL_IP.ordinal -> {
                     val addrA = readByte().toInt()
                     val addrB = readByte().toInt()
 
-                    globals[addrA]?.let { currentFrame.registry[addrB] = it }
+                    val value = globals[addrA] ?: throw runtimeError("Global at address $addrA does not exist")
+
+                    currentFrame.registry[addrB] = value
                 }
 
                 Opcode.STORE.ordinal -> {
-                    if (currentFrame.stack.size < 1)
-                        throw runtimeError("Stack underflow")
-
                     currentFrame.registry[readByte().toInt()] = currentFrame.stack.pop()
                 }
 
                 Opcode.STORE_GLOBAL.ordinal -> {
-                    if (currentFrame.stack.size < 1)
-                        throw runtimeError("Stack underflow")
-
                     globals[readByte().toInt()] = currentFrame.stack.pop()
                 }
 
@@ -313,10 +344,10 @@ class VM(private var chunk: Chunk?) {
                     currentFrame.stack.dup()
                 }
 
-                Opcode.IFEQ.ordinal -> {
+                Opcode.JUMP_IF_TRUE.ordinal -> {
                     val offset = readShort()
 
-                    val value = currentFrame.stack.last().value
+                    val value = currentFrame.stack.pop().value
                     if (value !is Boolean)
                         throw runtimeError("Expected boolean value")
 
@@ -324,10 +355,10 @@ class VM(private var chunk: Chunk?) {
                         currentFrame.ip += offset
                 }
 
-                Opcode.IFNE.ordinal -> {
+                Opcode.JUMP_IF_FALSE.ordinal -> {
                     val offset = readShort()
 
-                    val value = currentFrame.stack.last().value
+                    val value = currentFrame.stack.pop().value
                     if (value !is Boolean)
                         throw runtimeError("Expected boolean value")
 
@@ -348,9 +379,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.GET.ordinal -> {
-                    if (currentFrame.stack.size < 1)
-                        throw runtimeError("Stack underflow")
-
                     val name = readConstant().value.toString()
 
                     val instance = currentFrame.stack.last()
@@ -366,9 +394,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.GET_IP.ordinal -> {
-                    if (currentFrame.stack.size < 1)
-                        throw runtimeError("Stack underflow")
-
                     val name = readConstant().value.toString()
                     val addr = readByte().toInt()
 
@@ -384,9 +409,6 @@ class VM(private var chunk: Chunk?) {
                 }
 
                 Opcode.SET.ordinal -> {
-                    if (currentFrame.stack.size < 2)
-                        throw runtimeError("Stack underflow")
-
                     val name = readConstant().value.toString()
 
                     val instance = currentFrame.stack.pop()
@@ -408,6 +430,16 @@ class VM(private var chunk: Chunk?) {
                     callValue(callee, argCount)
                 }
 
+                Opcode.CALL_POP.ordinal -> {
+                    val argCount = readByte().toInt()
+                    if (currentFrame.stack.size < argCount + 1)
+                        throw runtimeError("Stack underflow")
+
+                    val callee = currentFrame.stack[currentFrame.stack.size - argCount - 1]
+
+                    callValue(callee, argCount, true)
+                }
+
                 Opcode.CALL_METHOD.ordinal -> {
                     val name = readConstant().value.toString()
 
@@ -426,8 +458,26 @@ class VM(private var chunk: Chunk?) {
                     callValue(callee, argCount)
                 }
 
+                Opcode.CALL_METHOD_POP.ordinal -> {
+                    val name = readConstant().value.toString()
+
+                    val argCount = readByte().toInt()
+                    if (currentFrame.stack.size < argCount + 1)
+                        throw runtimeError("Stack underflow")
+
+                    val parent = currentFrame.stack[currentFrame.stack.size - argCount - 1]
+                    if (parent !is ObjectValue)
+                        throw runtimeError("Parent should be an object")
+                    if (parent.value !is InstanceObject)
+                        throw runtimeError("Parent should be an instance")
+
+                    val callee = (parent.value as InstanceObject).fields[name] ?: throw runtimeError("Method $name does not exist")
+
+                    callValue(callee, argCount, true)
+                }
+
                 Opcode.RETURN.ordinal -> {
-                    val isVoid = currentFrame.function.returnType == null
+                    val isVoid = currentFrame.shouldPop || currentFrame.function.returnType == null
 
                     val returnValue = if (!isVoid)
                         currentFrame.stack.pop()
@@ -445,7 +495,7 @@ class VM(private var chunk: Chunk?) {
         }
     }
 
-    private fun callValue(callee: Value<*>, argCount: Int) {
+    private fun callValue(callee: Value<*>, argCount: Int, shouldPop: Boolean = false) {
         if (callee !is ObjectValue<*>)
             throw runtimeError("Callee must be an object")
 
@@ -471,9 +521,14 @@ class VM(private var chunk: Chunk?) {
 
                 currentFrame.stack.pop()
 
+                println()
+                println("== ${callee.value.name} ==")
+                callee.value.code.disassemble()
+
                 frames.addLast(CallFrame(
                     callee.value,
-                    registry = values
+                    registry = values,
+                    shouldPop = shouldPop
                 ))
             }
 
@@ -550,16 +605,9 @@ class VM(private var chunk: Chunk?) {
             it.accept(compiler)
         }
 
-        compiler.script.code.writeConstant(
-            ObjectValue(
-                NullObject
-            ),
-            -1
-        )
-
         compiler.script.code.write(
-            Opcode.RETURN,
-            -1
+            -1,
+            Opcode.RETURN
         )
 
         frames.addLast(CallFrame(
@@ -567,23 +615,6 @@ class VM(private var chunk: Chunk?) {
         ))
 
         this.chunk = compiler.script.code
-
-        try {
-            run()
-        } catch (e: Exception) {
-            e.printStackTrace()
-
-            return InterpretResult.RUNTIME_ERROR
-        }
-
-        val mainFunction = compiler.functions.first { it.isMainFunction }
-
-        frames.addLast(CallFrame(
-            mainFunction
-        ))
-
-        this.chunk = mainFunction.code
-        this.chunk?.disassemble()
 
         return try {
             run()

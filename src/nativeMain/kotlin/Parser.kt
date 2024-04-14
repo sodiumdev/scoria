@@ -106,27 +106,34 @@ class Parser(source: String) {
     }
 
     private fun primary(): Expression {
-        if (match(TokenType.FALSE)) return LiteralExpression(false, previous!!.line)
-        if (match(TokenType.TRUE)) return LiteralExpression(true, previous!!.line)
-        if (match(TokenType.NULL)) return LiteralExpression(null, previous!!.line)
+        advance()
 
-        if (match(TokenType.STRING))
-            return LiteralExpression(StringObject(previous!!.content.removePrefix("\"").removeSuffix("\"")), previous!!.line)
-        if (match(TokenType.FLOAT))
-            return LiteralExpression(previous!!.content.toFloat(), previous!!.line)
-        if (match(TokenType.INTEGER))
-            return LiteralExpression(previous!!.content.toInt(), previous!!.line)
-        if (match(TokenType.IDENTIFIER))
-            return GetVariableExpression(previous!!, environment[previous!!.content])
+        return when(previous!!.type) {
+            TokenType.FALSE -> LiteralExpression(false, previous!!.line)
+            TokenType.TRUE -> LiteralExpression(true, previous!!.line)
+            TokenType.NULL -> LiteralExpression(null, previous!!.line)
 
-        if (match(TokenType.LEFT_PAREN)) {
-            val expr = expression()
-            consume(TokenType.RIGHT_PAREN, "Expected \")\" after grouping expression")
+            TokenType.STRING -> LiteralExpression(
+                StringObject(
+                    previous!!.content.removePrefix("\"").removeSuffix("\"")
+                ),
+                previous!!.line
+            )
 
-            return GroupingExpression(expr, previous!!.line)
+            TokenType.FLOAT -> LiteralExpression(previous!!.content.toFloat(), previous!!.line)
+            TokenType.INTEGER -> LiteralExpression(previous!!.content.toInt(), previous!!.line)
+
+            TokenType.IDENTIFIER -> GetVariableExpression(previous!!, environment[previous!!.content])
+
+            TokenType.LEFT_PAREN -> {
+                val expr = expression()
+                consume(TokenType.RIGHT_PAREN, "Expected \")\" after grouping expression")
+
+                GroupingExpression(expr, previous!!.line)
+            }
+
+            else -> throw IllegalStateException("Error on token: ${previous!!}")
         }
-
-        throw IllegalStateException("Error on token: ${current!!}")
     }
 
     private fun call(): Expression {
@@ -158,9 +165,11 @@ class Parser(source: String) {
     }
 
     private fun unary(): Expression {
-        return if (match(TokenType.BANG, TokenType.MINUS))
-            UnaryExpression(unary(), previous!!)
-        else call()
+        return if (match(TokenType.BANG, TokenType.MINUS)) {
+            val operator = previous!!
+
+            UnaryExpression(unary(), operator)
+        } else call()
     }
 
     private fun factor(): Expression {
@@ -277,7 +286,7 @@ class Parser(source: String) {
                     else -> throw errorAt(operator, "Invalid assignment operator")
                 }
 
-                return AssignVariableExpression(name, value, local, newLocal)
+                return AssignVariableExpression(name, expr, DuplicateExpression(value, name.line), local, newLocal)
             } else if (expr is GetPropertyExpression) {
                 return SetPropertyExpression(expr.name, expr.parent, value)
             }
@@ -393,14 +402,17 @@ class Parser(source: String) {
         val keyword = previous!!
 
         var value: Expression? = null
-        if (!current!!.couldStartExpression)
+        if (current!!.couldStartExpression)
             value = expression()
 
         return ReturnStatement(keyword, value)
     }
 
     private fun statement(): Statement {
-        return if (match(TokenType.LET))
+        if (!match(TokenType.SEMICOLON) && previousStatementLine == current!!.line)
+            throw errorAt(current!!, SEMICOLON_INFERENCE_ERROR_MESSAGE)
+
+        val value = if (match(TokenType.LET))
             variableDeclarationStatement()
         else if (match(TokenType.FOR))
             forStatement()
@@ -417,6 +429,10 @@ class Parser(source: String) {
 
             BlockStatement(block(), line)
         } else expressionStatement()
+
+        previousStatementLine = previous!!.line
+
+        return value
     }
 
     private fun variableDeclarationStatement(): Statement {
@@ -656,19 +672,12 @@ class Parser(source: String) {
     }
 
     private fun declaration(): Statement {
-        try {
-            if (!match(TokenType.SEMICOLON) && previousStatementLine == current!!.line)
-                throw errorAt(current!!, SEMICOLON_INFERENCE_ERROR_MESSAGE)
-
-            val value = if (match(TokenType.CLASS))
+        return try {
+            if (match(TokenType.CLASS))
                 classDeclaration()
             else if (match(TokenType.FN))
                 functionDeclaration()
             else statement()
-
-            previousStatementLine = previous!!.line
-
-            return value
         } catch (e: IllegalStateException) {
             synchronize()
 

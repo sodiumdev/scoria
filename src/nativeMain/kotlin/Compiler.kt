@@ -1,6 +1,4 @@
 class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
-    val functions = mutableListOf<FunctionObject>()
-
     val script = FunctionObject("<script>", Chunk(), listOf(), null)
 
     private var function: FunctionObject? = null
@@ -9,6 +7,7 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
     override fun visit(classStatement: ClassStatement) {
         script.code.writeConstant(
+            classStatement.line,
             ObjectValue(
                 ClassObject(
                     classStatement.name.content,
@@ -32,18 +31,17 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
                         func.name to func
                     }.toTypedArray()))
                 )
-            ),
-            classStatement.line
+            )
         )
 
         script.code.write(
-            Opcode.STORE_GLOBAL,
-            classStatement.line
+            classStatement.line,
+            Opcode.STORE_GLOBAL
         )
 
         script.code.write(
-            classStatement.index,
-            classStatement.line
+            classStatement.line,
+            classStatement.index
         )
     }
 
@@ -54,46 +52,56 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
             it.accept(this)
         }
 
-        if (function.name.content == "main")
-            this.function!!.isMainFunction = true
-
-        functions.add(this.function!!)
-
         val compiled = this.function!!
 
         this.function = null
 
         script.code.writeConstant(
+            function.line,
             ObjectValue(
                 compiled
-            ),
-            function.line
+            )
         )
 
         script.code.write(
-            Opcode.STORE_GLOBAL,
-            function.line
+            function.line,
+            Opcode.STORE_GLOBAL
         )
 
         script.code.write(
-            function.index,
-            function.line
+            function.line,
+            function.index
         )
+
+        if (function.name.content == "main") {
+            script.code.write(
+                function.line,
+                Opcode.LOAD_GLOBAL
+            )
+
+            script.code.write(
+                function.line,
+                function.index
+            )
+
+            script.code.write(
+                function.line,
+                Opcode.CALL
+            )
+
+            script.code.write(
+                function.line,
+                0
+            )
+        }
     }
 
     private fun emitJump(opcode: Opcode, line: Int): Int {
         chunk.write(
+            line,
             opcode,
-            line
-        )
-
-        chunk.write(
             0xff,
-            line
-        )
-        chunk.write(
-            0xff,
-            line
+            0xff
         )
 
         return chunk.code.size - 2
@@ -107,14 +115,17 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
     private fun emitLoop(loopStart: Int, line: Int) {
         chunk.write(
-            Opcode.LOOP,
-            line
+            line,
+            Opcode.LOOP
         )
 
         val offset = chunk.code.size - loopStart + 2
 
-        chunk.write((offset shr 8) and 0xff, line)
-        chunk.write(offset and 0xff, line)
+        chunk.write(
+            line,
+            (offset shr 8) and 0xff,
+            offset and 0xff
+        )
     }
 
     override fun visit(whileStatement: WhileStatement) {
@@ -122,25 +133,18 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
         whileStatement.condition.accept(this)
 
-        val exitJump = emitJump(Opcode.IFNE, whileStatement.body.line)
-        chunk.write(
-            Opcode.POP,
-            whileStatement.body.line
-        )
+        val exitJump = emitJump(Opcode.JUMP_IF_FALSE, whileStatement.body.line)
+
         whileStatement.body.accept(this)
         emitLoop(loopStart, whileStatement.body.line)
 
         patchJump(exitJump)
-        chunk.write(
-            Opcode.POP,
-            whileStatement.body.line
-        )
     }
 
     override fun visit(ifStatement: IfStatement) {
         ifStatement.condition.accept(this)
 
-        val thenJump = emitJump(Opcode.IFNE, ifStatement.thenBranch.line)
+        val thenJump = emitJump(Opcode.JUMP_IF_FALSE, ifStatement.thenBranch.line)
         ifStatement.thenBranch.accept(this)
 
         val elseJump = emitJump(Opcode.JUMP, ifStatement.elseBranch?.line ?: ifStatement.line)
@@ -153,38 +157,125 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
     }
 
     override fun visit(expression: ExpressionStatement) {
-        expression.expression.accept(this)
-        if (expression.expression is CallExpression)
-            chunk.write(
-                Opcode.POP_IF_PRESENT, expression.line
-            )
-        else chunk.write(
-            Opcode.POP, expression.line
-        )
+        val expr = expression.expression
+
+        if (expression.shouldPop)
+            if (expr is CallExpression) {
+                expr.shouldPop = true
+                expr.accept(this)
+            } else {
+                expr.accept(this)
+                chunk.write(
+                    expression.line, Opcode.POP
+                )
+            }
+        else expr.accept(this)
     }
 
     override fun visit(print: PrintStatement) {
         print.expression.accept(this)
-        chunk.write(Opcode.PRINT_POP, print.line)
+        chunk.write(print.line, Opcode.PRINT_POP)
     }
 
     override fun visit(returnStatement: ReturnStatement) {
         if (returnStatement.returnValue != null)
             returnStatement.returnValue!!.accept(this)
 
-        chunk.write(Opcode.RETURN, returnStatement.line)
+        chunk.write(returnStatement.line, Opcode.RETURN)
     }
 
     override fun visit(declareVariable: VariableDeclarationStatement) {
-        if (declareVariable.init != null)
-            declareVariable.init!!.accept(this)
-        else visit(LiteralExpression(null, declareVariable.line))
-
-        chunk.write(
-            Opcode.STORE, declareVariable.line
+        if (declareVariable.init != null) {
+            if (declareVariable.init is BinaryExpression) {
+                val binary = declareVariable.init as BinaryExpression
+                if (writeBinaryShortTerm(binary, null, declareVariable.index, declareVariable.line))
+                    return
+            } else declareVariable.init!!.accept(this)
+        } else chunk.writeConstant(
+            declareVariable.line,
+            ObjectValue(NullObject)
         )
 
-        chunk.write(declareVariable.index, declareVariable.line)
+        chunk.write(
+            declareVariable.line,
+            Opcode.STORE,
+            declareVariable.index
+        )
+    }
+
+    private fun writeBinaryShortTerm(binary: BinaryExpression, leftHandSide: Expression?, index: Int, line: Int): Boolean {
+        val isLeftVariableExpr = binary.left is GetVariableExpression
+        val isRightVariableExpr = binary.right is GetVariableExpression
+
+        if (isLeftVariableExpr && isRightVariableExpr) {
+            val left = (binary.left as GetVariableExpression)
+            val right = (binary.right as GetVariableExpression)
+
+            when (binary.operator.type) {
+                TokenType.STAR -> Opcode.MULTIPLY_FT
+                TokenType.SLASH -> Opcode.DIVIDE_FT
+                TokenType.PLUS -> Opcode.ADD_FT
+                TokenType.MINUS -> Opcode.SUBTRACT_FT
+
+                else -> null
+            }?.let {
+                chunk.write(
+                    line,
+                    it,
+                    left.index,
+                    right.index,
+                    index
+                )
+
+                return true
+            }
+        }
+
+        if (leftHandSide != null) {
+            if (isLeftVariableExpr && leftHandSide == binary.left) {
+                binary.right.accept(this)
+
+                when (binary.operator.type) {
+                    TokenType.STAR -> Opcode.MULTIPLY_IP
+                    TokenType.SLASH -> Opcode.DIVIDE_IP
+                    TokenType.PLUS -> Opcode.ADD_IP
+                    TokenType.MINUS -> Opcode.SUBTRACT_IP
+
+                    else -> null
+                }?.let {
+                    chunk.write(
+                        line,
+                        it,
+                        index
+                    )
+
+                    return true
+                }
+            }
+
+            if (isRightVariableExpr && leftHandSide == binary.right) {
+                binary.left.accept(this)
+
+                when (binary.operator.type) {
+                    TokenType.STAR -> Opcode.MULTIPLY_IP
+                    TokenType.SLASH -> Opcode.DIVIDE_IP
+                    TokenType.PLUS -> Opcode.ADD_IP
+                    TokenType.MINUS -> Opcode.SUBTRACT_IP
+
+                    else -> null
+                }?.let {
+                    chunk.write(
+                        line,
+                        it,
+                        index
+                    )
+
+                    return true
+                }
+            }
+        }
+
+        return false
     }
 
     override fun visit(block: BlockStatement) {
@@ -200,26 +291,18 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
         when (logical.operator.type) {
             TokenType.AND -> {
-                val endJump = emitJump(Opcode.IFNE, line)
+                val endJump = emitJump(Opcode.JUMP_IF_FALSE, line)
 
-                chunk.write(
-                    Opcode.POP,
-                    line
-                )
                 logical.right.accept(this)
 
                 patchJump(endJump)
             }
 
             TokenType.OR -> {
-                val elseJump = emitJump(Opcode.IFNE, line)
+                val elseJump = emitJump(Opcode.JUMP_IF_FALSE, line)
                 val endJump = emitJump(Opcode.JUMP, line)
 
                 patchJump(elseJump)
-                chunk.write(
-                    Opcode.POP,
-                    line
-                )
 
                 logical.right.accept(this)
                 patchJump(endJump)
@@ -231,18 +314,14 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
     override fun visit(setProperty: SetPropertyExpression) {
         setProperty.parent.accept(this)
-        setProperty.assigned.accept(this)
+        setProperty.rightHandSide.accept(this)
 
         chunk.constants.add(ObjectValue(StringObject(setProperty.name.content)))
 
         chunk.write(
+            setProperty.name.line,
             Opcode.SET,
-            setProperty.name.line
-        )
-
-        chunk.write(
-            chunk.constants.size - 1,
-            setProperty.name.line
+            chunk.constants.size - 1
         )
     }
 
@@ -252,13 +331,9 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
         chunk.constants.add(ObjectValue(StringObject(getProperty.name.content)))
 
         chunk.write(
+            getProperty.name.line,
             Opcode.GET,
-            getProperty.name.line
-        )
-
-        chunk.write(
-            chunk.constants.size - 1,
-            getProperty.name.line
+            chunk.constants.size - 1
         )
     }
 
@@ -270,13 +345,9 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
         }
 
         chunk.write(
-            Opcode.CALL,
-            call.paren.line
-        )
-
-        chunk.write(
-            call.arguments.size,
-            call.paren.line
+            call.paren.line,
+            if (call.shouldPop) Opcode.CALL_POP else Opcode.CALL,
+            call.arguments.size
         )
     }
 
@@ -294,51 +365,52 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
             )
         )
 
-        val identifierLocation = chunk.constants.size - 1
-
         chunk.write(
-            Opcode.CALL_METHOD,
-            call.paren.line
-        )
-
-        chunk.write(
-            identifierLocation,
-            call.paren.line
-        )
-
-        chunk.write(
-            call.arguments.size,
-            call.paren.line
+            call.paren.line,
+            if (call.shouldPop) Opcode.CALL_METHOD_POP else Opcode.CALL_METHOD,
+            chunk.constants.size - 1,
+            call.arguments.size
         )
     }
 
     override fun visit(getVariable: GetVariableExpression) {
         chunk.write(
-            if (getVariable.isGlobal) Opcode.LOAD_GLOBAL else Opcode.LOAD, getVariable.name.line
+            getVariable.name.line,
+            if (getVariable.isGlobal) Opcode.LOAD_GLOBAL else Opcode.LOAD,
+            getVariable.index
         )
+    }
 
-        chunk.write(getVariable.index, getVariable.name.line)
+    override fun visit(duplicate: DuplicateExpression) {
+        duplicate.expression.accept(this)
+
+        chunk.write(
+            duplicate.line,
+            Opcode.DUP
+        )
     }
 
     override fun visit(assignVariable: AssignVariableExpression) {
-        assignVariable.assigned.accept(this)
+        if (assignVariable.rightHandSide is BinaryExpression) {
+            val rhs = (assignVariable.rightHandSide as BinaryExpression)
+            if (writeBinaryShortTerm(rhs, assignVariable.leftHandSide, assignVariable.index, assignVariable.name.line))
+                return
+        }
+
+        assignVariable.rightHandSide.accept(this)
 
         chunk.write(
-            Opcode.DUP, assignVariable.name.line
+            assignVariable.name.line,
+            Opcode.STORE,
+            assignVariable.index
         )
-
-        chunk.write(
-            Opcode.STORE, assignVariable.name.line
-        )
-
-        chunk.write(assignVariable.index, assignVariable.name.line)
     }
 
     override fun visit(unary: UnaryExpression) {
         if (unary.value != null) {
             chunk.writeConstant(
-                unary.vmValue,
-                unary.operator.line
+                unary.operator.line,
+                unary.vmValue
             )
 
             return
@@ -347,20 +419,9 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
         unary.right.accept(this)
 
         when (unary.operator.type) {
-            TokenType.MINUS -> chunk.write(Opcode.NEGATE, unary.operator.line)
-            TokenType.BANG -> {
-                val thenJump = emitJump(Opcode.IFNE, unary.operator.line)
+            TokenType.MINUS -> chunk.write(unary.operator.line, Opcode.NEGATE)
+            TokenType.BANG -> chunk.write(unary.operator.line, Opcode.INVERT_BOOLEAN)
 
-                chunk.writeConstant(BooleanValue(false), unary.operator.line)
-
-                val elseJump = emitJump(Opcode.JUMP, unary.operator.line)
-
-                patchJump(thenJump)
-
-                chunk.writeConstant(BooleanValue(true), unary.operator.line)
-
-                patchJump(elseJump)
-            }
             else -> {}
         }
     }
@@ -368,8 +429,8 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
     override fun visit(binary: BinaryExpression) {
         if (binary.value != null) {
             chunk.writeConstant(
-                binary.vmValue,
-                binary.operator.line
+                binary.operator.line,
+                binary.vmValue
             )
 
             return
@@ -383,22 +444,22 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
                 binary.left.accept(this)
 
                 chunk.writeConstant(
+                    binary.operator.line,
                     DoubleValue(
                         1.0 / (binary.right.value as NumberValue<*>).value.toDouble()
-                    ),
-                    binary.operator.line
+                    )
                 )
-                chunk.write(Opcode.MULTIPLY, binary.operator.line)
+                chunk.write(binary.operator.line, Opcode.MULTIPLY)
 
                 return
             }
 
             if (binary.left.value == 0) {
                 chunk.writeConstant(
+                    binary.operator.line,
                     DoubleValue(
                         0.0
-                    ),
-                    binary.operator.line
+                    )
                 )
 
                 return
@@ -408,10 +469,10 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
         if (binary.operator.type == TokenType.STAR
             && (binary.left.value == 0 || binary.right.value == 0)) {
             chunk.writeConstant(
+                binary.operator.line,
                 DoubleValue(
                     0.0
-                ),
-                binary.operator.line
+                )
             )
 
             return
@@ -421,18 +482,15 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
         binary.right.accept(this)
 
         when (binary.operator.type) {
-            TokenType.MINUS -> {
-                chunk.write(Opcode.NEGATE, binary.operator.line)
-                chunk.write(Opcode.ADD, binary.operator.line)
-            }
-            TokenType.SLASH -> chunk.write(Opcode.DIVIDE, binary.operator.line)
-            TokenType.STAR -> chunk.write(Opcode.MULTIPLY, binary.operator.line)
-            TokenType.PLUS -> chunk.write(Opcode.ADD, binary.operator.line)
+            TokenType.MINUS -> chunk.write(binary.operator.line, Opcode.NEGATE, Opcode.ADD.ordinal)
+            TokenType.SLASH -> chunk.write(binary.operator.line, Opcode.DIVIDE)
+            TokenType.STAR -> chunk.write(binary.operator.line, Opcode.MULTIPLY)
+            TokenType.PLUS -> chunk.write(binary.operator.line, Opcode.ADD)
 
-            TokenType.GREATER -> chunk.write(Opcode.IS_GREATER, binary.operator.line)
-            TokenType.GREATER_EQUAL -> chunk.write(Opcode.IS_GREATER_EQUAL, binary.operator.line)
-            TokenType.LESS -> chunk.write(Opcode.IS_LESS, binary.operator.line)
-            TokenType.LESS_EQUAL -> chunk.write(Opcode.IS_LESS_EQUAL, binary.operator.line)
+            TokenType.GREATER -> chunk.write(binary.operator.line, Opcode.IS_GREATER)
+            TokenType.GREATER_EQUAL -> chunk.write(binary.operator.line, Opcode.IS_GREATER_EQUAL)
+            TokenType.LESS -> chunk.write(binary.operator.line, Opcode.IS_LESS)
+            TokenType.LESS_EQUAL -> chunk.write(binary.operator.line, Opcode.IS_LESS_EQUAL)
 
             else -> {}
         }
@@ -444,8 +502,8 @@ class Compiler: ExpressionVisitor<Unit>, StatementVisitor<Unit> {
 
     override fun visit(literal: LiteralExpression) {
         chunk.writeConstant(
-            literal.toValue(),
-            literal.line
+            literal.line,
+            literal.toValue()
         )
     }
 }

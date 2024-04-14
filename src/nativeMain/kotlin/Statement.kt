@@ -32,13 +32,23 @@ data class WhileStatement(var condition: Expression, var body: Statement, overri
     override fun <R> accept(visitor: StatementVisitor<R>): R = visitor.visit(this)
 }
 
-data class IfStatement(
-    var condition: Expression, var thenBranch: Statement, var elseBranch: Statement?,
-    override val line: Int): Statement {
+data class IfStatement(var condition: Expression, var thenBranch: Statement, var elseBranch: Statement?, override val line: Int): Statement {
     override fun <R> accept(visitor: StatementVisitor<R>): R = visitor.visit(this)
 }
 
 data class ExpressionStatement(var expression: Expression, override val line: Int): Statement {
+    var shouldPop: Boolean = true
+
+    init {
+        if (expression is AssignVariableExpression) {
+            val assignVariable = expression as AssignVariableExpression
+            if (assignVariable.rightHandSide is DuplicateExpression) {
+                assignVariable.rightHandSide = (assignVariable.rightHandSide as DuplicateExpression).expression
+                shouldPop = false
+            }
+        }
+    }
+
     override fun <R> accept(visitor: StatementVisitor<R>): R = visitor.visit(this)
 }
 
@@ -68,9 +78,6 @@ data class VariableDeclarationStatement(val name: Token, val local: Local): Stat
 
     val index: Int = local.index
     var init: Expression? = local.value
-
-    val isUsed: Boolean
-        get() = local.isUsed
 
     override fun <R> accept(visitor: StatementVisitor<R>): R = visitor.visit(this)
 }

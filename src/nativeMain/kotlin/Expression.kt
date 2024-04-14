@@ -7,6 +7,7 @@ interface ExpressionVisitor<R> {
     fun visit(logical: LogicalExpression): R
     fun visit(binary: BinaryExpression): R
     fun visit(getVariable: GetVariableExpression): R
+    fun visit(duplicate: DuplicateExpression): R
     fun visit(assignVariable: AssignVariableExpression): R
     fun visit(grouping: GroupingExpression): R
     fun visit(literal: LiteralExpression): R
@@ -87,10 +88,11 @@ data class GetPropertyExpression(val name: Token, var parent: Expression): Expre
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
-data class SetPropertyExpression(val name: Token, var parent: Expression, var assigned: Expression): Expression {
-    override var type: ExpressionType = ExpressionType.OBJECT
+data class SetPropertyExpression(val name: Token, var parent: Expression, var rightHandSide: Expression): Expression {
+    override val type: ExpressionType
+        get() = rightHandSide.type
     override val hasCall: Boolean
-        get() = parent.hasCall || assigned.hasCall
+        get() = parent.hasCall || rightHandSide.hasCall
 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
@@ -98,6 +100,8 @@ data class SetPropertyExpression(val name: Token, var parent: Expression, var as
 open class CallExpression(var callee: Expression, val paren: Token, var arguments: List<Expression>): Expression {
     override var type: ExpressionType = ExpressionType.OBJECT
     override val hasCall: Boolean = true
+
+    var shouldPop: Boolean = false
 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
@@ -127,7 +131,7 @@ data class UnaryExpression(var right: Expression, val operator: Token): Expressi
                     ExpressionType.OBJECT -> error("Can't do unary expressions with objects!")
                 }
 
-                else -> {}
+                else -> null
             }
         }
 
@@ -159,14 +163,14 @@ data class LogicalExpression(var left: Expression, var right: Expression, val op
                 ExpressionType.DOUBLE -> error("Can't apply logical operations to a double!")
                 ExpressionType.LONG -> error("Can't apply logical operations to a long!")
                 ExpressionType.OBJECT -> error("Can't do logical operations with objects!")
-                ExpressionType.BOOLEAN -> !(right.value as Boolean)
+                ExpressionType.BOOLEAN -> {}
             }
 
             return when (operator.type) {
                 TokenType.AND -> left.value as Boolean && right.value as Boolean
                 TokenType.OR -> left.value as Boolean || right.value as Boolean
 
-                else -> {}
+                else -> null
             }
         }
 
@@ -232,14 +236,24 @@ data class GetVariableExpression(val name: Token, val local: Local): Expression 
     override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
 }
 
-data class AssignVariableExpression(val name: Token, var assigned: Expression, val oldLocal: Local, val local: Local): Expression {
+data class DuplicateExpression(var expression: Expression, val line: Int): Expression {
     override val type: ExpressionType
-        get() = assigned.type
-    override val value: Any?
-        get() = assigned.value
+        get() = expression.type
 
     override val hasCall: Boolean
-        get() = assigned.hasCall
+        get() = expression.hasCall
+
+    override fun <R> accept(visitor: ExpressionVisitor<R>): R = visitor.visit(this)
+}
+
+data class AssignVariableExpression(val name: Token, var leftHandSide: Expression, var rightHandSide: Expression, val oldLocal: Local, val local: Local): Expression {
+    override val type: ExpressionType
+        get() = rightHandSide.type
+    override val value: Any?
+        get() = rightHandSide.value
+
+    override val hasCall: Boolean
+        get() = rightHandSide.hasCall
 
     val index = local.index
 
@@ -267,7 +281,7 @@ data class LiteralExpression(override val value: Any?, val line: Int): Expressio
         is Long -> ExpressionType.LONG
         is Object -> ExpressionType.OBJECT
 
-        else -> error("Invalid literal value!")
+        else -> error("Invalid literal value $value")
     }
 
     override val hasCall: Boolean

@@ -1,10 +1,7 @@
 class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
-    private var inLoop: Boolean = false
-    private var isDependedOn: Boolean = false
-
     override fun visit(setProperty: SetPropertyExpression): Expression {
         setProperty.parent = setProperty.parent.accept(this)
-        setProperty.assigned = setProperty.assigned.accept(this)
+        setProperty.rightHandSide = setProperty.rightHandSide.accept(this)
 
         return setProperty
     }
@@ -66,44 +63,20 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     }
 
     override fun visit(getVariable: GetVariableExpression): Expression {
-        if (inLoop) {
-            getVariable.local.shouldFold = false
-            if (getVariable.type != ExpressionType.OBJECT)
-                getVariable.local.isUsed = true
-        }
-
-        if (isDependedOn)
-            getVariable.local.isUsed = true
-
-        val value = (if (!getVariable.local.shouldFold)
-            null
-        else getVariable.local.value?.accept(this)) ?: run {
-            getVariable.local.isUsed = true
-
-            return getVariable
-        }
-
-        getVariable.local.isUsed = false
+        val value = getVariable.local.value?.accept(this) ?: return getVariable
         getVariable.local.value = value
 
-        return value
+        return getVariable
+    }
+
+    override fun visit(duplicate: DuplicateExpression): Expression {
+        duplicate.expression = duplicate.expression.accept(this)
+
+        return duplicate
     }
 
     override fun visit(assignVariable: AssignVariableExpression): Expression {
-        assignVariable.assigned = assignVariable.assigned.accept(this)
-
-        if (isDependedOn) {
-            assignVariable.oldLocal.isUsed = true
-            assignVariable.local.isUsed = true
-
-            assignVariable.oldLocal.shouldFold = false
-            assignVariable.local.shouldFold = false
-        }
-
-        if (inLoop) {
-            assignVariable.oldLocal.shouldFold = false
-            assignVariable.local.shouldFold = false
-        }
+        assignVariable.rightHandSide = assignVariable.rightHandSide.accept(this)
 
         return assignVariable
     }
@@ -141,15 +114,8 @@ class LiteralOptimizer: ExpressionVisitor<Expression>, StatementVisitor<Unit> {
     }
 
     override fun visit(whileStatement: WhileStatement) {
-        inLoop = true
-
-        isDependedOn = true
         whileStatement.condition = whileStatement.condition.accept(this)
-        isDependedOn = false
-
         whileStatement.body.accept(this)
-
-        inLoop = false
     }
 
     override fun visit(expression: ExpressionStatement) {
@@ -270,13 +236,6 @@ class DeadCodeEliminator: ExpressionVisitor<Expression>, StatementVisitor<Statem
         if (blockReturned)
             return null
 
-        if (!declareVariable.isUsed) {
-            if (declareVariable.init?.hasCall == true)
-                return ExpressionStatement(declareVariable.init!!, declareVariable.line)
-
-            return null
-        }
-
         declareVariable.init = declareVariable.init?.accept(this)
 
         return declareVariable
@@ -293,7 +252,7 @@ class DeadCodeEliminator: ExpressionVisitor<Expression>, StatementVisitor<Statem
 
     override fun visit(setProperty: SetPropertyExpression): Expression {
         setProperty.parent = setProperty.parent.accept(this)
-        setProperty.assigned = setProperty.assigned.accept(this)
+        setProperty.rightHandSide = setProperty.rightHandSide.accept(this)
 
         return setProperty
     }
@@ -344,7 +303,15 @@ class DeadCodeEliminator: ExpressionVisitor<Expression>, StatementVisitor<Statem
 
     override fun visit(getVariable: GetVariableExpression) = getVariable
 
+    override fun visit(duplicate: DuplicateExpression): Expression {
+        duplicate.expression = duplicate.expression.accept(this)
+
+        return duplicate
+    }
+
     override fun visit(assignVariable: AssignVariableExpression): Expression {
+        assignVariable.rightHandSide = assignVariable.rightHandSide.accept(this)
+
         return assignVariable
     }
 
