@@ -1,4 +1,5 @@
 # Scoria
+## Please ⭐ this project if you like it!
 ## How does it work?
 ```rs
 fn main() {
